@@ -1,0 +1,25 @@
+génération aléatoire de puissances à tirer pour tous les noeuds (assez orientée selon la journée quand même)
+
+amplitude dans laquelle le débit massique peut évoluer de manière réaliste
+
+Minimiser :
+    - la différence entre la puissance voulue et fournie (confort)
+    - les pertes thermiques calculées
+    - la puissance délivrée par la pompe (contrainte de consommation)
+    - ...
+
+Variables (discrètes) :
+    - température d'entrée
+        -> contraintes : [min,max], [variation min, variation max]
+    - débit massique entrée
+        -> contraintes : puissance ou vitesse max ??
+    - ouverture des vannes (∈ [0,1])
+
+
+Axes d'amélio :
+    - calculer les pertes de charges au fur et à mesure de l'aller
+    - implémenter une fonction permettant de déterminer le tracé de l'eau sur le retour
+    - faire revenir l'eau : l'eau se mixe avec celle en amont
+    - température finale de l'eau une fois de retour ?
+        puissance nécessaire pour la chauffer de nouveau ?
+        pour refroidir on mélange avec de l'eau froide ?
