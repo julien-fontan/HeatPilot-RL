@@ -143,7 +143,7 @@ class DistrictHeatingNetwork:
         mass_flows = self.rho * self.pipe_areas * velocities
         
         # 3. Résolution des températures aux noeuds (Mélange vectorisé)
-        node_temps = self._solve_node_mixing_vectorized(global_state, mass_flows, boundary_conditions, t)
+        node_temps = self._solve_node_mixing(global_state, mass_flows, boundary_conditions, t)
         
         # 4. Calcul de la physique par conduite
         # On itère encore sur les objets Pipe car ils ont des géométries (dx) différentes,
@@ -162,7 +162,7 @@ class DistrictHeatingNetwork:
             
         return dy_dt
 
-    def _solve_node_mixing_vectorized(self, global_state, mass_flows, boundary_conditions, t):
+    def _solve_node_mixing(self, global_state, mass_flows, boundary_conditions, t):
         """
         Calcule la température de mélange aux noeuds sans boucles Python lentes.
         Utilise np.add.at pour accumuler les flux.

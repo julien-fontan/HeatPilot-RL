@@ -1,6 +1,10 @@
-génération aléatoire de puissances à tirer pour tous les noeuds (assez orientée selon la journée quand même)
+A faire maintenant :
+    - génération aléatoire de puissances à tirer pour tous les noeuds (assez orientée selon la journée quand même)
+    - amplitude dans laquelle le débit massique peut évoluer de manière réaliste
+        (on fixe une amplitude de débit ou de puissance de pompe)
 
-amplitude dans laquelle le débit massique peut évoluer de manière réaliste
+A faire plus tard :
+    - mettre en place une stratégie de gestion "classique" (se renseigner donc)
 
 Minimiser :
     - la différence entre la puissance voulue et fournie (confort)
@@ -14,7 +18,6 @@ Variables (discrètes) :
     - débit massique entrée
         -> contraintes : puissance ou vitesse max ??
     - ouverture des vannes (∈ [0,1])
-
 
 Axes d'amélio :
     - calculer les pertes de charges au fur et à mesure de l'aller

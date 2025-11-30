@@ -1,8 +1,7 @@
 import numpy as np
 from scipy.interpolate import interp1d
-from typing import Callable
 
-def generate_step_function(t_end: float, step_time: float, min_val: float, max_val: float, seed: int) -> Callable[[float], float]:
+def generate_step_function(t_end, step_time, min_val, max_val, seed):
     """
     Génère une fonction temporelle en escalier (valeurs aléatoires).
     """
