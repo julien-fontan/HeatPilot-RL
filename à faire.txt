@@ -2,9 +2,12 @@ A faire maintenant :
     - génération aléatoire de puissances à tirer pour tous les noeuds (assez orientée selon la journée quand même)
     - amplitude dans laquelle le débit massique peut évoluer de manière réaliste
         (on fixe une amplitude de débit ou de puissance de pompe)
+    - fonction qui cré le dictionnaire de décision des fractions
 
 A faire plus tard :
     - mettre en place une stratégie de gestion "classique" (se renseigner donc)
+    - apporter de la cohérence sur les grandeurs physiques générées : les puissances demandées par les habitations
+    - prendre en compte d'autres paramètres : énergies intermittentes, ...
 
 Minimiser :
     - la différence entre la puissance voulue et fournie (confort)
@@ -26,3 +29,24 @@ Axes d'amélio :
     - température finale de l'eau une fois de retour ?
         puissance nécessaire pour la chauffer de nouveau ?
         pour refroidir on mélange avec de l'eau froide ?
+    - Actuellement, un épisode dure 1 journée (un step tous les .. secondes). Cela n'est pas jutsifié pour l'instant car les puissances demandées sont purement aléatoires.
+        En revanche, si on essaie de coller par le futur plus à la réalité, la modélisation sur un jour entier devient nécessaire (la demande de chaleur la matin ou le soir n'est pas la même que celle en journée).
+        Aussi, cela pourra permettre dans le futur de tenir compte de phénomènes externes dépendant également de l'heure de la journée (prix de l'élec, ensoleillement et photovoltaique...)
+
+
+
+L'expression "pas d'images" fait référence à la nature des données que l'environnement envoie à l'agent (l'espace d'observation).
+
+Cela justifie le choix de l'architecture du réseau de neurones :
+
+MlpPolicy (Multi-Layer Perceptron) :
+
+Utilisée quand l'observation est un vecteur de nombres (données structurées).
+Exemple : L'agent reçoit une liste de valeurs physiques comme [position_x=1.2, vitesse=0.5, angle=0.1].
+C'est le cas ici ("pas d'images"), donc on utilise un réseau de neurones dense classique.
+CnnPolicy (Convolutional Neural Network) :
+
+Aurait été nécessaire si l'observation était une image (matrice de pixels).
+Exemple : L'agent "regarde" l'écran d'un jeu vidéo (Atari, Mario) et reçoit une matrice de taille (hauteur, largeur, couleurs).
+En résumé, le commentaire explique que puisque l'agent ne "voit" pas de pixels mais reçoit des coordonnées ou des mesures directes, il faut utiliser MlpPolicy.
+
