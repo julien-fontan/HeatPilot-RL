@@ -4,8 +4,8 @@ import os
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.callbacks import BaseCallback
-from heat_gym_env import HeatNetworkEnv
-from main import EDGES  # Import de la topologie unique
+from district_heating_gym_env import HeatNetworkEnv
+from config import EDGES, RL_TRAINING, GLOBAL_SEED
 
 class SaveAndEvalCallback(BaseCallback):
     """
@@ -72,21 +72,21 @@ class SaveAndEvalCallback(BaseCallback):
         return True
 
 def train():
-    
-    # épisode fait 24h / 10s = 8640 pas.
-    n_steps = 432   # nb de fois par épisode qu'agent met à jour la strat (ordre grandeur temps d'évolution système). Doit être un diviseur de n_episodes
-    episode_length = 8640   # durée d'une simulation, définir dans autre fichier
-    total_timesteps = episode_length * 200
+
+    episode_length = RL_TRAINING["episode_length_steps"]
+    n_steps = RL_TRAINING["n_steps_update"]
+    total_timesteps = episode_length * RL_TRAINING["total_episodes"]
+    np.random.seed(GLOBAL_SEED)
     
     # Configuration de la sauvegarde
-    save_freq_episodes = 50
+    save_freq_episodes = RL_TRAINING["save_freq_episodes"]
     save_freq_steps = save_freq_episodes * episode_length
     
-    # Création de l'environnement avec la topologie importée
-    env = HeatNetworkEnv(edges=EDGES)
+    # Création de l'environnement
+    env = HeatNetworkEnv()
     
-    # Environnement d'évaluation séparé pour l'évaluation (pour ne pas perturber l'env d'entraînement)
-    eval_env = HeatNetworkEnv(edges=EDGES)
+    # Environnement d'évaluation séparé
+    eval_env = HeatNetworkEnv()
     
     # Vérification de la conformité avec l'API Gym
     check_env(env)
@@ -99,7 +99,14 @@ def train():
         eval_env=eval_env
     )
 
-    model = PPO("MlpPolicy", env, n_steps=n_steps, verbose=1, learning_rate=3e-4) # verbose = 0 si veut rien dans la console
+    model = PPO(
+        "MlpPolicy",
+        env,
+        n_steps=n_steps,
+        verbose=1,
+        learning_rate=RL_TRAINING["learning_rate"],
+        seed=GLOBAL_SEED,
+    )
     #  passer le learning rate à 1e-4 ou 5e-5 si loss explose
     
     print("Début de l'entraînement...")

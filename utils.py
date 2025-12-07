@@ -2,14 +2,6 @@ import numpy as np
 from scipy.interpolate import interp1d
 from dataclasses import dataclass
 
-@dataclass
-class PhysicalProperties:
-    rho: float = 1000.0
-    cp: float = 4182.0
-    thermal_conductivity: float = 0.0
-    external_temp: float = 10.0
-    heat_loss_coeff: float = 0.0
-
 def generate_step_function(t_end, step_time, min_val, max_val, seed):
     """
     Génère une fonction temporelle en escalier (valeurs aléatoires).

@@ -1,97 +1,99 @@
-import numpy as np
-
 class Graph:
     """
     Analyse la structure du graphe et fournit des accesseurs pour les propriétés topologiques.
     """
     def __init__(self, edges):
-        self.edges = edges
-        self.n_pipes = len(edges)
-        self.edge_index_map = {e: i for i, e in enumerate(edges)}
         
-        # 1. Construction de base
+        # Si edges est une liste de tuples, on convertit en dictionnaire pour permettre le stockage d'attributs
+        if isinstance(edges, list):
+            self.edges = {e: {} for e in edges}
+        else:
+            self.edges = edges
+            
+        self.n_edges = len(self.edges)
+        
+        self._build_nodes()
+        self._find_node_roles()
+
+        # Mappings vers des indices
+        self.node_ids = {n: i for i, n in enumerate(self.nodes)}
+        self.inv_node_ids = {i: n for i, n in enumerate(self.nodes)}
+        
+        self._compute_topological_order()   # Tri topologique (faire les calculs dans le bon ordre)
+
+    def _build_nodes(self):
         self.nodes = set()
-        self.adj = {}
-        self.in_degree = {}
+        self.parent_nodes = {}
+        self.child_nodes = {}
+        self.out_degree = {} # child count
+        self.in_degree = {} # parent count
         
         for u, v in self.edges:
             self.nodes.add(u)
             self.nodes.add(v)
-            if u not in self.adj: self.adj[u] = []
-            self.adj[u].append(v)
-            
+            if u not in self.child_nodes: self.child_nodes[u] = []
+            self.child_nodes[u].append(v)
+            if v not in self.parent_nodes: self.parent_nodes[v] = []
+            self.parent_nodes[v].append(u)
+
+            self.out_degree[u] = self.out_degree.get(u, 0) + 1
+            if v not in self.out_degree: self.out_degree[v] = 0
             self.in_degree[v] = self.in_degree.get(v, 0) + 1
             if u not in self.in_degree: self.in_degree[u] = 0
 
-        self.unique_nodes = sorted(list(self.nodes))
-        self.n_nodes = len(self.unique_nodes)
-        
-        # 2. Mappings
-        self.node_map = {n: i for i, n in enumerate(self.unique_nodes)}
-        self.inv_node_map = {i: n for i, n in enumerate(self.unique_nodes)}
-        
-        # 3. Analyse des rôles
-        self._analyze_roles()
-        
-        # 4. Structures d'adjacence (Indices)
-        self._build_adjacency_structures()
-        
-        # 5. Tri topologique
-        self._compute_topological_order()
+        for i in self.child_nodes:  # on trie pour assurer le déterminisme
+            self.child_nodes[i].sort()
+        for i in self.parent_nodes:
+            self.parent_nodes[i].sort()
 
-    def _analyze_roles(self):
-        self.branching_map = {u: sorted(vs) for u, vs in self.adj.items() if len(vs) > 1}
-        self.branching_nodes = sorted(list(self.branching_map.keys()))
-        
-        inlets = [n for n in self.unique_nodes if self.in_degree[n] == 0]
-        self.inlet_node = inlets[0] if inlets else (min(self.unique_nodes) if self.unique_nodes else None)
-        self.consumer_nodes = sorted([n for n in self.unique_nodes if n != self.inlet_node])
+        self.nodes = sorted(list(self.nodes))
+        self.n_nodes = len(self.nodes)
 
-    def _build_adjacency_structures(self):
-        self.node_in_pipes = [[] for _ in range(self.n_nodes)]
-        self.node_out_pipes = [[] for _ in range(self.n_nodes)]
-        self.pipe_u_indices = np.zeros(self.n_pipes, dtype=int)
-        self.pipe_v_indices = np.zeros(self.n_pipes, dtype=int)
-
-        for i, (u, v) in enumerate(self.edges):
-            u_idx = self.node_map[u]
-            v_idx = self.node_map[v]
-            
-            self.pipe_u_indices[i] = u_idx
-            self.pipe_v_indices[i] = v_idx
-            
-            self.node_out_pipes[u_idx].append(i)
-            self.node_in_pipes[v_idx].append(i)
+    def _find_node_roles(self):
+        inlets = [n for n in self.nodes if n not in self.parent_nodes]  # pas de parents
+        if len(inlets) == 1:
+            self.inlet_node = inlets[0]
+        else:
+            self.inlet_node = inlets
+        self.branching_nodes = sorted([n for n in self.nodes if self.out_degree.get(n, 0) > 1])
+        self.consumer_nodes = sorted([n for n in self.nodes if n != self.inlet_node])
 
     def _compute_topological_order(self):
-        indeg = np.array([len(self.node_in_pipes[v]) for v in range(self.n_nodes)], dtype=int)
-        queue = [i for i in range(self.n_nodes) if indeg[i] == 0]
-        topo = []
+        in_degree = self.in_degree.copy()
+        queue = [n for n in self.nodes if in_degree[n] == 0]
+        self.topo_nodes = []
         while queue:
-            n = queue.pop(0)
-            topo.append(n)
-            for pipe_idx in self.node_out_pipes[n]:
-                v = self.pipe_v_indices[pipe_idx]
-                indeg[v] -= 1
-                if indeg[v] == 0:
+            u = queue.pop(0)
+            self.topo_nodes.append(self.node_ids[u])
+            for v in self.child_nodes.get(u, []):
+                in_degree[v] -= 1
+                if in_degree[v] == 0:
                     queue.append(v)
-        self.topo_nodes = np.array(topo, dtype=int)
 
     # --- Getters ---
-    def get_node_maps(self):
-        return self.node_map, self.inv_node_map
+    def get_id_from_node(self, node):
+        return self.node_ids[node]
+
+    def get_node_from_id(self, idx):
+        return self.inv_node_ids[idx]
 
     def get_nodes_count(self):
         return self.n_nodes
 
-    def get_adjacency_indices(self):
-        return self.node_in_pipes, self.node_out_pipes, self.pipe_u_indices, self.pipe_v_indices
+    def get_parent_nodes(self):
+        return self.parent_nodes
+    
+    def get_child_nodes(self):
+        return self.child_nodes
 
-    def get_topological_sort(self):
+    def get_inlet_node(self):
+        return self.inlet_node
+    
+    def get_consumer_nodes(self):
+        return self.consumer_nodes
+    
+    def get_branching_nodes(self):
+        return self.branching_nodes
+
+    def get_topo_nodes(self):
         return self.topo_nodes
-
-    def get_special_nodes(self):
-        return self.inlet_node, self.consumer_nodes, self.branching_nodes
-
-    def get_branching_map(self):
-        return self.branching_map
