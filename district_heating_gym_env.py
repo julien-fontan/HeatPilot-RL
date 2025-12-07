@@ -13,6 +13,7 @@ from config import (
     INITIAL_CONDITIONS,
     POWER_PROFILE_CONFIG,
     MIN_RETURN_TEMP,
+    PIPE_GENERATION,   # si tu veux y accéder ici aussi
 )
 
 class HeatNetworkEnv(gym.Env):
@@ -58,8 +59,8 @@ class HeatNetworkEnv(gym.Env):
         # Les splits sont des float entre 0..1 représentant la fraction vers le 1er enfant.
         n_actions = 2 + len(self.branching_nodes)
         self.action_space = spaces.Box(
-            low=np.array([self.temp_min, self.flow_min] + [0.0]*len(self.branching_nodes)),
-            high=np.array([self.temp_max, self.flow_max] + [1.0]*len(self.branching_nodes)),
+            low=np.array([self.temp_min, self.flow_min] + [0.0]*len(self.branching_nodes), dtype=np.float32),
+            high=np.array([self.temp_max, self.flow_max] + [1.0]*len(self.branching_nodes), dtype=np.float32),
             dtype=np.float32
         )
 
@@ -85,8 +86,16 @@ class HeatNetworkEnv(gym.Env):
         self.last_p_source = 0.0
         self.last_p_pump = 0.0
 
-    def reset(self):
-        seed = GLOBAL_SEED
+    def reset(self, seed=None, options=None):
+        """
+        Reset conforme à l'API Gymnasium:
+        - accepte seed et options,
+        - retourne (observation, info).
+        """
+        # Si aucun seed n'est fourni, on utilise GLOBAL_SEED pour la reproductibilité
+        if seed is None:
+            seed = GLOBAL_SEED
+
         super().reset(seed=seed)
 
         edges = self.edges
@@ -96,6 +105,7 @@ class HeatNetworkEnv(gym.Env):
             edges=edges,
             dx=self.dx,
             seed=seed,
+            # les bornes viennent de PIPE_GENERATION par défaut
         )
 
         pipes_list = []
@@ -148,6 +158,7 @@ class HeatNetworkEnv(gym.Env):
         self.last_total_p_supplied = 0.0
         self.last_p_source = 0.0
         self.last_p_pump = 0.0
+
         return self._get_obs(), {}
 
     def step(self, action):

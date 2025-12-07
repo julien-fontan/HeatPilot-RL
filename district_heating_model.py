@@ -2,7 +2,7 @@ import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
 from graph_utils import Graph
-from config import MIN_RETURN_TEMP
+from config import MIN_RETURN_TEMP, PIPE_GENERATION
 
 class Pipe:
     """
@@ -12,12 +12,15 @@ class Pipe:
 
     @staticmethod
     def generate_parameters(edges, dx, seed,
-                            n_segments_min=20, n_segments_max=61,
-                            diameter_min=0.15, diameter_max=0.35,
-                            h_min=0.90, h_max=1.75):
+                            n_segments_min=None, n_segments_max=None,
+                            diameter_min=None, diameter_max=None,
+                            h_min=None, h_max=None):
         """
         Génère de façon reproductible les paramètres géométriques des conduites
         pour une liste d'arêtes `edges` et un `seed` donné.
+
+        Si les paramètres ne sont pas fournis, utilise les valeurs de PIPE_GENERATION
+        définies dans config.py.
 
         Retourne:
             lengths   : np.ndarray de longueurs (m)
@@ -25,6 +28,20 @@ class Pipe:
             n_segments: np.ndarray de nombre de segments par conduite
             h_vals    : np.ndarray de coefficients de pertes (W/m/K) ou équivalent
         """
+        # Valeurs par défaut depuis la config globale
+        if n_segments_min is None:
+            n_segments_min = PIPE_GENERATION["n_segments_min"]
+        if n_segments_max is None:
+            n_segments_max = PIPE_GENERATION["n_segments_max"]
+        if diameter_min is None:
+            diameter_min = PIPE_GENERATION["diameter_min"]
+        if diameter_max is None:
+            diameter_max = PIPE_GENERATION["diameter_max"]
+        if h_min is None:
+            h_min = PIPE_GENERATION["h_min"]
+        if h_max is None:
+            h_max = PIPE_GENERATION["h_max"]
+
         rng = np.random.default_rng(seed)
         n_pipes = len(edges)
 

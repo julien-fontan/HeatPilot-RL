@@ -75,7 +75,7 @@ def train():
 
     episode_length = RL_TRAINING["episode_length_steps"]
     n_steps = RL_TRAINING["n_steps_update"]
-    total_timesteps = episode_length * RL_TRAINING["total_episodes"]
+    total_timesteps = RL_TRAINING["total_timesteps"]
     np.random.seed(GLOBAL_SEED)
     
     # Configuration de la sauvegarde
@@ -103,6 +103,7 @@ def train():
         "MlpPolicy",
         env,
         n_steps=n_steps,
+        batch_size=144,              # par ex. 144 = 432 / 3
         verbose=1,
         learning_rate=RL_TRAINING["learning_rate"],
         seed=GLOBAL_SEED,

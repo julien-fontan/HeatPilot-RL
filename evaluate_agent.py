@@ -2,8 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 from stable_baselines3 import PPO
-from heat_gym_env import HeatNetworkEnv
-from main import EDGES
+from district_heating_gym_env import HeatNetworkEnv
+from config import EDGES  # éventuellement inutile mais conservé si tu veux afficher les ids de noeuds
 
 def evaluate_and_plot(model_path="ppo_heat_network_final"):
     """
@@ -14,7 +14,7 @@ def evaluate_and_plot(model_path="ppo_heat_network_final"):
         return
 
     # 1. Charger l'environnement et le modèle
-    env = HeatNetworkEnv(edges=EDGES)
+    env = HeatNetworkEnv()
     model = PPO.load(model_path)
 
     # 2. Exécuter une simulation complète
@@ -26,7 +26,7 @@ def evaluate_and_plot(model_path="ppo_heat_network_final"):
         "T_inlet": [],
         "mass_flow": [],
         "rewards": [],
-        "consumer_temps": [] # Liste de listes
+        "consumer_temps": []  # Liste de listes
     }
 
     print("Début de l'évaluation...")
@@ -36,8 +36,6 @@ def evaluate_and_plot(model_path="ppo_heat_network_final"):
         obs, reward, terminated, truncated, _ = env.step(action)
         done = terminated or truncated
         
-        # Récupération des infos pour les graphiques
-        # obs structure: [temps_consommateurs..., T_in, Flow, demandes...]
         n_consumers = len(env.consumer_nodes)
         
         history["time"].append(env.current_t)
@@ -47,7 +45,7 @@ def evaluate_and_plot(model_path="ppo_heat_network_final"):
         history["consumer_temps"].append(obs[:n_consumers])
 
     # 3. Tracer les courbes
-    time_axis = np.array(history["time"]) / 3600.0 # Heures
+    time_axis = np.array(history["time"]) / 3600.0  # Heures
     
     plt.figure(figsize=(12, 10))
     
@@ -55,12 +53,11 @@ def evaluate_and_plot(model_path="ppo_heat_network_final"):
     plt.subplot(3, 1, 1)
     plt.plot(time_axis, history["T_inlet"], 'k--', label="T Inlet (Source)", linewidth=2)
     cons_temps = np.array(history["consumer_temps"])
-    # On affiche quelques consommateurs pour ne pas surcharger
     for i, node_id in enumerate(env.consumer_nodes):
         plt.plot(time_axis, cons_temps[:, i], label=f"Node {node_id}")
     plt.ylabel("Température (°C)")
     plt.legend(loc='upper right', fontsize='small', ncol=2)
-    plt.title("Évolution des Températures")
+    plt.title("Évolution des Températures aux noeuds consommateurs")
     plt.grid(True)
 
     # Débit

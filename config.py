@@ -35,6 +35,16 @@ SIMULATION_PARAMS = dict(
     warmup=50             # Durée de pré-chauffe (warmup) avant la simulation principale (s)
 )
 
+# --- Paramètres de génération des conduites (Pipe.generate_parameters) ---
+PIPE_GENERATION = dict(
+    n_segments_min=20,
+    n_segments_max=61,
+    diameter_min=0.15,
+    diameter_max=0.35,
+    h_min=0.90,
+    h_max=1.75,
+)
+
 # --- Conditions initiales réseau / actionneurs ---
 INITIAL_CONDITIONS = dict(
     initial_temp=MIN_RETURN_TEMP,  # °C dans toutes les cellules au reset
@@ -60,11 +70,13 @@ CONTROL_LIMITS = dict(
 )
 
 _episode_length_steps = int(SIMULATION_PARAMS["t_max_day"] / SIMULATION_PARAMS["dt"])
+_total_episodes = 200
+_total_timesteps = _episode_length_steps * _total_episodes
 # --- Paramètres d'entraînement RL ---
 RL_TRAINING = dict(
+    total_timesteps=_total_timesteps,
     episode_length_steps=_episode_length_steps,
     n_steps_update=432,
-    total_episodes=200,
     learning_rate=3e-4,
     save_freq_episodes=50,
 )

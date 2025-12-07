@@ -10,6 +10,7 @@ from config import (
     GLOBAL_SEED,
     POWER_PROFILE_CONFIG,
     MIN_RETURN_TEMP,
+    PIPE_GENERATION,        # <-- si besoin
 )
 
 def run_simulation():
@@ -26,11 +27,17 @@ def run_simulation():
     graph = Graph(edges)
     consumer_nodes = graph.get_consumer_nodes()
 
-    # Génération reproductible des propriétés des conduites, y compris heat_loss_coeff
+    # Génération reproductible des propriétés des conduites, paramètres depuis config via defaults
     lengths, diameters, n_segments, h_vals = Pipe.generate_parameters(
         edges=edges,
         dx=dx,
         seed=seed,
+        # n_segments_min=PIPE_GENERATION["n_segments_min"],   # facultatif
+        # n_segments_max=PIPE_GENERATION["n_segments_max"],
+        # diameter_min=PIPE_GENERATION["diameter_min"],
+        # diameter_max=PIPE_GENERATION["diameter_max"],
+        # h_min=PIPE_GENERATION["h_min"],
+        # h_max=PIPE_GENERATION["h_max"],
     )
 
     pipes_list = []
@@ -67,7 +74,8 @@ def run_simulation():
             max_val=POWER_PROFILE_CONFIG["p_max"],
             seed=rng.integers(0, 1_000_000),
         )
-    # # Si l'on veut une même puissance consommée constante sur tous les noeuds
+    
+    # # A décommenter si l'on veut une même puissance consommée constante sur tous les noeuds
     # constant_power = POWER_PROFILE_CONFIG["p_max"]  # par ex. une valeur unique
     # node_power_funcs = {node: (lambda t, p=constant_power: p) for node in consumer_nodes}
     
@@ -88,7 +96,6 @@ def run_simulation():
     # --- Phase 1 : warmup (aucun enregistrement utilisé ensuite) ---
     print("Warmup du réseau...")
     tspan_warmup = (tspan[0], warmup_duration)
-    # pas besoin de t_eval très fin ici; on ne garde pas ces résultats
     sol_warmup = network.solve(
         tspan_warmup,
         y0,
