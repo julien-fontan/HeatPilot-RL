@@ -306,9 +306,17 @@ $$
 
 Dans le code :
 
-- \( \text{ÉcartConfort} = \sum_i |P_{supplied,i} - P_{demand,i}| \),
-- \( P_{\text{chaudière}} = \dot{m} c_p (T_{inlet} - T_{\min,return}) \),
-- \( P_{\text{pompe}} = 1000 \cdot \dot{m} \).
+$$
+\text{ÉcartConfort} = \sum_i \left|P_{\text{supplied},i} - P_{\text{demand},i}\right|
+$$
+
+$$
+P_{\text{chaudière}} = \dot{m} \, c_p \, \bigl(T_{\text{inlet}} - T_{\min,\text{return}}\bigr)
+$$
+
+$$
+P_{\text{pompe}} = 1000 \cdot \dot{m}
+$$
 
 Les poids sont actuellement :
 
@@ -454,8 +462,9 @@ Cette section décrit la structure d’analyse à mettre en place une fois que v
 - **Écart confort moyen et max** :
 
 $$
-\frac{1}{T}\int |P_{supplied}(t) - P_{demand}(t)| dt
+\frac{1}{T}\int \left|P_{\text{supplied}}(t) - P_{\text{demand}}(t)\right| \,\mathrm{d}t
 $$
+
 - **Récompense cumulée** sur l’épisode.
 
 **[TODO FIGURE 3]**  
