@@ -12,15 +12,16 @@ class Pipe:
 
     @staticmethod
     def generate_parameters(edges, dx, seed,
-                            n_segments_min=None, n_segments_max=None,
+                            length_min=None, length_max=None,
                             diameter_min=None, diameter_max=None,
                             h_min=None, h_max=None):
         """
         Génère de façon reproductible les paramètres géométriques des conduites
         pour une liste d'arêtes `edges` et un `seed` donné.
 
-        Si les paramètres ne sont pas fournis, utilise les valeurs de PIPE_GENERATION
-        définies dans config.py.
+        On définit directement une plage de longueurs physiques
+        [length_min, length_max] indépendante de dx. Le nombre de segments
+        est ensuite déduit via n_segments = round(length / dx).
 
         Retourne:
             lengths   : np.ndarray de longueurs (m)
@@ -29,10 +30,10 @@ class Pipe:
             h_vals    : np.ndarray de coefficients de pertes (W/m/K) ou équivalent
         """
         # Valeurs par défaut depuis la config globale
-        if n_segments_min is None:
-            n_segments_min = PIPE_GENERATION["n_segments_min"]
-        if n_segments_max is None:
-            n_segments_max = PIPE_GENERATION["n_segments_max"]
+        if length_min is None:
+            length_min = PIPE_GENERATION["length_min"]
+        if length_max is None:
+            length_max = PIPE_GENERATION["length_max"]
         if diameter_min is None:
             diameter_min = PIPE_GENERATION["diameter_min"]
         if diameter_max is None:
@@ -45,8 +46,17 @@ class Pipe:
         rng = np.random.default_rng(seed)
         n_pipes = len(edges)
 
-        n_segments = rng.integers(n_segments_min, n_segments_max, size=n_pipes)
-        lengths = dx * n_segments
+        # Longueurs physiques tirées entre length_min et length_max
+        lengths = rng.uniform(length_min, length_max, size=n_pipes)
+
+        # Nombre de segments déduit de la longueur et de dx
+        n_segments = np.rint(lengths / dx).astype(int)
+        # On impose au moins 2 cellules par conduite pour que la physique fonctionne
+        n_segments = np.maximum(n_segments, 2)
+
+        # Mise à jour cohérente des longueurs (cas où round(...) * dx != length tirée)
+        lengths = n_segments * dx
+
         diameters = rng.uniform(diameter_min, diameter_max, size=n_pipes)
         h_vals = rng.uniform(h_min, h_max, size=n_pipes)
 
@@ -65,6 +75,10 @@ class Pipe:
         self.length = length
         self.diameter = diameter
         self.dx = dx
+        # n_cells cohérent avec length = n_segments * dx
+        self.n_cells = int(round(length / dx))
+        if self.n_cells < 2:
+            raise ValueError(f"Conduite {nodes}: Longueur insuffisante pour le pas dx choisi.")
 
         self.rho = rho
         self.cp = cp
@@ -77,10 +91,6 @@ class Pipe:
             thermal_conductivity / (rho * cp)
             if thermal_conductivity > 0 else 0
         )
-        self.n_cells = int(round(length / dx))
-        if self.n_cells < 2:
-            raise ValueError(f"Conduite {nodes}: Longueur insuffisante pour le pas dx choisi.")
-
 
     def compute_derivatives(self, t, T, mass_flow, inlet_temp, dT_dt):
         """

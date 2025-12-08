@@ -13,7 +13,8 @@ from config import (
     INITIAL_CONDITIONS,
     POWER_PROFILE_CONFIG,
     MIN_RETURN_TEMP,
-    PIPE_GENERATION,   # si tu veux y accéder ici aussi
+    PIPE_GENERATION,
+    RL_TRAINING,               # <-- import dt RL
 )
 
 class HeatNetworkEnv(gym.Env):
@@ -24,11 +25,11 @@ class HeatNetworkEnv(gym.Env):
         super(HeatNetworkEnv, self).__init__()
 
         # --- Paramètres de Simulation ---
-        self.dt = SIMULATION_PARAMS["dt"]       # Pas de temps de contrôle (s)
-        self.t_max = SIMULATION_PARAMS["t_max_day"]     # Une journée
+        self.dt = RL_TRAINING["dt"]                 # Pas de temps de contrôle (s), côté RL
+        self.t_max = SIMULATION_PARAMS["t_max_day"] # Une journée
         self.dx = SIMULATION_PARAMS["dx"]
-        # Limite dure sur le nombre de pas par épisode pour éviter des épisodes trop longs
-        self.max_steps = int(2 * 3600 / self.dt)  # par ex. 2h simulées max → 2h/dt pas
+        # Limite dure sur le nombre de pas par épisode
+        self.max_steps = int(2 * 3600 / self.dt)    # ex: 2h simulées max → 2h/dt pas
 
         self.props = PHYSICAL_PROPS
 

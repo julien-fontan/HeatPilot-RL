@@ -10,7 +10,8 @@ from config import (
     GLOBAL_SEED,
     POWER_PROFILE_CONFIG,
     MIN_RETURN_TEMP,
-    PIPE_GENERATION,        # <-- si besoin
+    PIPE_GENERATION,
+    RL_TRAINING,   # <-- importer le dt RL
 )
 
 def run_simulation():
@@ -18,6 +19,7 @@ def run_simulation():
     props = PHYSICAL_PROPS
     dx = SIMULATION_PARAMS["dx"]
     t_max_day = SIMULATION_PARAMS["t_max_day"]
+    dt = RL_TRAINING["dt"]       # pas temporel utilisé pour l’échantillonnage des courbes
     seed = GLOBAL_SEED  # même graine que le RL, pour cohérence globale
 
     # durée de pré-chauffe (warmup) pour dépasser le transitoire initial
@@ -108,7 +110,8 @@ def run_simulation():
 
     # --- Phase 2 : simulation principale à partir de l'état chaud ---
     print("Début de la simulation principale...")
-    t_eval_points = np.arange(warmup_duration, t_max_day, 10.0)
+    # points d’échantillonnage toutes dt secondes (ou un multiple si tu veux plus grossier)
+    t_eval_points = np.arange(warmup_duration, t_max_day + dt, dt)
     sol = network.solve(
         (warmup_duration, t_max_day),
         y_warm,

@@ -85,11 +85,26 @@ def train():
     n_steps = RL_TRAINING["n_steps_update"]
     total_timesteps = RL_TRAINING["total_timesteps"]
     use_s3 = RL_TRAINING.get("use_s3_checkpoints", False)
+    dt_control = RL_TRAINING.get("dt", None)
     np.random.seed(GLOBAL_SEED)
     
     # Configuration de la sauvegarde
     save_freq_episodes = RL_TRAINING["save_freq_episodes"]
     save_freq_steps = save_freq_episodes * episode_length
+
+    # Rappel explicite des principaux paramètres RL (dont dt)
+    if dt_control is not None:
+        print(
+            f"RL config: dt={dt_control}s, episode_length_steps={episode_length}, "
+            f"total_timesteps={total_timesteps}, n_steps_update={n_steps}, "
+            f"save_freq_episodes={save_freq_episodes}"
+        )
+    else:
+        print(
+            f"RL config: episode_length_steps={episode_length}, "
+            f"total_timesteps={total_timesteps}, n_steps_update={n_steps}, "
+            f"save_freq_episodes={save_freq_episodes}"
+        )
     
     # Création de l'environnement
     env = HeatNetworkEnv()
