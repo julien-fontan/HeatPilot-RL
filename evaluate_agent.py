@@ -5,7 +5,7 @@ from stable_baselines3 import PPO
 from district_heating_gym_env import HeatNetworkEnv
 from config import EDGES  # éventuellement inutile mais conservé si tu veux afficher les ids de noeuds
 
-def evaluate_and_plot(model_path="ppo_heat_network_final"):
+def evaluate_and_plot(model_path="checkpoints/model_step_8640"):
     """
     Charge un modèle, exécute un épisode complet et affiche les résultats.
     """

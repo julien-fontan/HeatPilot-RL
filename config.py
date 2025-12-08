@@ -29,7 +29,7 @@ MIN_RETURN_TEMP = 40.0  # °C
 SIMULATION_PARAMS = dict(
     dx=0.01,               # m
     t_max_day=24 * 3600.0, # s (un épisode simulé = 1 journée)
-    dt=0.1,               # pas de contrôle (s)
+    dt=10,               # pas de contrôle (s)
     rtol=1e-4,             # tolérance relative solveur ODE (°0.0001×70 ≈ 0.007°C)
     atol=1e-4,             # tolérance absolue solveur ODE (en °C) (négligeable par rapport aux variations de contrôle (0.5°C par pas, etc.)
     warmup=50             # Durée de pré-chauffe (warmup) avant la simulation principale (s)
@@ -70,15 +70,16 @@ CONTROL_LIMITS = dict(
 )
 
 _episode_length_steps = int(SIMULATION_PARAMS["t_max_day"] / SIMULATION_PARAMS["dt"])
-_total_episodes = 200
+_total_episodes = 10
 _total_timesteps = _episode_length_steps * _total_episodes
 # --- Paramètres d'entraînement RL ---
 RL_TRAINING = dict(
     total_timesteps=_total_timesteps,
     episode_length_steps=_episode_length_steps,
-    n_steps_update=432,
+    n_steps_update=200,
     learning_rate=3e-4,
-    save_freq_episodes=50,
+    save_freq_episodes=1,
+    use_s3_checkpoints=False,  # False = uniquement local, True = local + S3
 )
 
 # Ancien réseau (env 5MW)
