@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from district_heating_model import Pipe, DistrictHeatingNetwork
-from utils import generate_step_function
+from utils import generate_step_function, generate_smooth_profile
 from graph_utils import Graph
 from config import (
     EDGES,
@@ -17,7 +17,7 @@ def run_simulation():
     edges = EDGES
     props = PHYSICAL_PROPS
     dx = SIMULATION_PARAMS["dx"]
-    tspan = (0.0, 20000.0)
+    t_max_day = SIMULATION_PARAMS["t_max_day"]
     seed = GLOBAL_SEED  # même graine que le RL, pour cohérence globale
 
     # durée de pré-chauffe (warmup) pour dépasser le transitoire initial
@@ -57,22 +57,24 @@ def run_simulation():
 
     # Température source en entrée
     inlet_temp = 100.0  # °C constante
-    # inlet_temp = generate_step_function(tspan[1], 900.0, 70.0, 90.0, seed=seed)   # °C
+    # inlet_temp = generate_step_function(t_max_day, 900.0, 70.0, 90.0, seed=seed)   # °C
 
     # Débit massique en entrée
     inlet_mass_flow = 15.0  # kg/s constant
-    # inlet_mass_flow = generate_step_function(tspan[1], 900.0, 10.0, 20.0, seed=seed)  # kg/s
+    # inlet_mass_flow = generate_step_function(t_max_day, 900.0, 10.0, 20.0, seed=seed)  # kg/s
 
     # Profils de puissance demandée par les noeuds consommateurs
     rng = np.random.default_rng()  # pas de seed ici, profils différents à chaque exécution
+    smooth_factor = POWER_PROFILE_CONFIG.get("smooth_factor", 1.0)
     node_power_funcs = {}
     for node in consumer_nodes:
-        node_power_funcs[node] = generate_step_function(
-            t_end=tspan[1],
+        node_power_funcs[node] = generate_smooth_profile(
+            t_end=t_max_day,
             step_time=POWER_PROFILE_CONFIG["step_time"],
             min_val=POWER_PROFILE_CONFIG["p_min"],
             max_val=POWER_PROFILE_CONFIG["p_max"],
             seed=rng.integers(0, 1_000_000),
+            smooth_factor=smooth_factor,
         )
     
     # # A décommenter si l'on veut une même puissance consommée constante sur tous les noeuds
@@ -95,9 +97,8 @@ def run_simulation():
 
     # --- Phase 1 : warmup (aucun enregistrement utilisé ensuite) ---
     print("Warmup du réseau...")
-    tspan_warmup = (tspan[0], warmup_duration)
     sol_warmup = network.solve(
-        tspan_warmup,
+        (0.0, warmup_duration),
         y0,
         method="BDF",
         rtol=SIMULATION_PARAMS["rtol"],
@@ -107,10 +108,9 @@ def run_simulation():
 
     # --- Phase 2 : simulation principale à partir de l'état chaud ---
     print("Début de la simulation principale...")
-    tspan_main = (warmup_duration, tspan[1])
-    t_eval_points = np.arange(tspan_main[0], tspan_main[1], 10.0)
+    t_eval_points = np.arange(warmup_duration, t_max_day, 10.0)
     sol = network.solve(
-        tspan_main,
+        (warmup_duration, t_max_day),
         y_warm,
         method="BDF",
         rtol=SIMULATION_PARAMS["rtol"],

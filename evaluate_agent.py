@@ -6,7 +6,8 @@ from stable_baselines3 import PPO
 from district_heating_gym_env import HeatNetworkEnv
 from config import EDGES  # éventuellement inutile mais conservé si tu veux afficher les ids de noeuds
 
-MODELS_DIR = "./models"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODELS_DIR = os.path.join(BASE_DIR, "models")
 
 def _find_latest_model(models_dir: str) -> str | None:
     """
@@ -27,23 +28,26 @@ def _find_latest_model(models_dir: str) -> str | None:
     best_step, best_fname = max(candidates, key=lambda x: x[0])
     return os.path.join(models_dir, best_fname[:-4])
 
-def _resolve_model_path(preferred_path: str | None) -> str | None:
+def _resolve_model_path(model_name: str | None) -> str | None:
     """
     Stratégie:
-      1) si preferred_path fourni et existe → l'utiliser,
-      2) sinon prendre le PPO_step_* de plus grand timestep dans MODELS_DIR.
+      - Si model_name est fourni, on suppose qu'il s'agit du nom d'un modèle situé dans MODELS_DIR
+        (ex: 'PPO_step_864000') et on cherche MODELS_DIR/model_name.zip.
+      - Si model_name est None, on prend le PPO_step_* de plus grand timestep dans MODELS_DIR.
     Retourne le chemin SANS extension .zip ou None si rien trouvé.
     """
-    if preferred_path:
-        if os.path.exists(preferred_path + ".zip"):
-            return preferred_path
-        if os.path.exists(preferred_path):
-            # si l'utilisateur a déjà donné le .zip complet
-            return os.path.splitext(preferred_path)[0]
+    if model_name:
+        candidate = os.path.join(MODELS_DIR, model_name)
+        if os.path.exists(candidate + ".zip"):
+            return candidate
+        else:
+            print(f"Modèle '{model_name}.zip' introuvable dans {MODELS_DIR}")
+            return None
 
+    # Pas de nom fourni → on prend le dernier modèle
     latest = _find_latest_model(MODELS_DIR)
     if latest is not None:
-        print(f"Aucun modèle explicite trouvé, utilisation du dernier modèle: {latest}.zip")
+        print(f"Aucun modèle explicite fourni, utilisation du dernier modèle: {os.path.basename(latest)}.zip")
         return latest
 
     return None
@@ -51,15 +55,15 @@ def _resolve_model_path(preferred_path: str | None) -> str | None:
 def evaluate_and_plot(model_path: str | None = None):
     """
     Charge un modèle, exécute un épisode complet et affiche les résultats.
-    model_path: chemin SANS extension .zip (comme dans PPO.load), ou None pour "dernier modèle".
+    model_path: nom du modèle (sans .zip) dans le dossier ./models, ou None pour "dernier modèle".
     """
     resolved = _resolve_model_path(model_path)
     if resolved is None:
         print("Erreur: aucun modèle PPO_step_*.zip trouvé dans ./models.")
         return
 
-    if model_path is None or resolved != model_path:
-        print(f"Chemin modèle résolu: {resolved}.zip")
+    if model_path is None or os.path.basename(resolved) != model_path:
+        print(f"Chemin modèle résolu: {os.path.basename(resolved)}.zip")
 
     # 1. Charger l'environnement et le modèle
     env = HeatNetworkEnv()

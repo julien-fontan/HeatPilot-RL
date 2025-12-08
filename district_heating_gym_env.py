@@ -2,7 +2,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 from district_heating_model import Pipe, DistrictHeatingNetwork
-from utils import generate_step_function
+from utils import generate_step_function, generate_smooth_profile
 from graph_utils import Graph
 from config import (
     PHYSICAL_PROPS,
@@ -27,7 +27,9 @@ class HeatNetworkEnv(gym.Env):
         self.dt = SIMULATION_PARAMS["dt"]       # Pas de temps de contrôle (s)
         self.t_max = SIMULATION_PARAMS["t_max_day"]     # Une journée
         self.dx = SIMULATION_PARAMS["dx"]
-        
+        # Limite dure sur le nombre de pas par épisode pour éviter des épisodes trop longs
+        self.max_steps = int(2 * 3600 / self.dt)  # par ex. 2h simulées max → 2h/dt pas
+
         self.props = PHYSICAL_PROPS
 
         # --- Contraintes Physiques ---
@@ -86,6 +88,9 @@ class HeatNetworkEnv(gym.Env):
         self.last_p_source = 0.0
         self.last_p_pump = 0.0
 
+        # compteur de pas dans l'épisode courant
+        self.step_count = 0
+
     def reset(self, seed=None, options=None):
         """
         Reset conforme à l'API Gymnasium:
@@ -124,15 +129,18 @@ class HeatNetworkEnv(gym.Env):
             pipes_list.append(p)
 
         # 2. Génération des profils de demande (puissance en W) pour les consommateurs
+        # step_time est un temps physique (s). smooth_factor > 1.0 rend le profil plus lisse.
         rng = np.random.default_rng()  # profils différents à chaque reset
+        smooth_factor = POWER_PROFILE_CONFIG.get("smooth_factor", 1.0)
         self.demand_funcs = {}
         for node in self.consumer_nodes:
-            self.demand_funcs[node] = generate_step_function(
-                self.t_max,
-                POWER_PROFILE_CONFIG["step_time"],
-                POWER_PROFILE_CONFIG["p_min"],
-                POWER_PROFILE_CONFIG["p_max"],
+            self.demand_funcs[node] = generate_smooth_profile(
+                t_end=self.t_max,
+                step_time=POWER_PROFILE_CONFIG["step_time"],
+                min_val=POWER_PROFILE_CONFIG["p_min"],
+                max_val=POWER_PROFILE_CONFIG["p_max"],
                 seed=rng.integers(0, 1_000_000),
+                smooth_factor=smooth_factor,
             )
 
         # 3. Construire le réseau avec consommation activée
@@ -158,6 +166,9 @@ class HeatNetworkEnv(gym.Env):
         self.last_total_p_supplied = 0.0
         self.last_p_source = 0.0
         self.last_p_pump = 0.0
+
+        # remise à zéro du compteur de pas
+        self.step_count = 0
 
         return self._get_obs(), {}
 
@@ -217,10 +228,9 @@ class HeatNetworkEnv(gym.Env):
             rtol=SIMULATION_PARAMS["rtol"],
             atol=SIMULATION_PARAMS["atol"],
         )
-        
-        # Mise à jour de l'état interne (températures dans toutes les cellules au temps t_next)
         self.state = sol.y[:, -1]
         self.current_t = t_next
+        self.step_count += 1
 
         # Après ce pas, DistrictHeatingNetwork a:
         # - recalculé mass_flows (dans compute_system_dynamics),
@@ -285,7 +295,8 @@ class HeatNetworkEnv(gym.Env):
         obs = self._get_obs()
         
         terminated = False
-        truncated = (self.current_t >= self.t_max)
+        # Troncature si temps max atteint OU nombre de pas max atteint
+        truncated = (self.current_t >= self.t_max) or (self.step_count >= self.max_steps)
         
         return obs, reward, terminated, truncated, {}
 

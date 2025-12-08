@@ -521,6 +521,7 @@ class DistrictHeatingNetwork:
             delta_T = p_supplied / (m_in * cp) if m_in * cp > 0 else 0.0
             T_node_out = max(T_node_in - delta_T, t_min_return)
 
+            # on met simplement à jour la température nodale
             node_temps[node_idx] = T_node_out
 
         return node_temps

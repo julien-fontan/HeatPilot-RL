@@ -27,12 +27,12 @@ MIN_RETURN_TEMP = 40.0  # °C
 
 # --- Paramètres de discrétisation / simulation "physique" ---
 SIMULATION_PARAMS = dict(
-    dx=0.01,               # m
+    dx=1,               # m
     t_max_day=24 * 3600.0, # s (un épisode simulé = 1 journée)
-    dt=0.1,               # pas de contrôle (s)
+    dt=1,               # pas de contrôle (s)
     rtol=1e-4,             # tolérance relative solveur ODE (°0.0001×70 ≈ 0.007°C)
     atol=1e-4,             # tolérance absolue solveur ODE (en °C) (négligeable par rapport aux variations de contrôle (0.5°C par pas, etc.)
-    warmup=50             # Durée de pré-chauffe (warmup) avant la simulation principale (s)
+    warmup=3600             # Durée de pré-chauffe (warmup) avant la simulation principale (s)
 )
 
 # --- Paramètres de génération des conduites (Pipe.generate_parameters) ---
@@ -55,15 +55,21 @@ INITIAL_CONDITIONS = dict(
 POWER_PROFILE_CONFIG = dict(
     p_min=100_000.0,     # W
     p_max=300_000.0,     # W
-    step_time=7200.0,    # s entre deux changements (2h)
+    step_time=3600.0,    # s entre deux changements (1h en continu, échelle "macro")
+    smooth_factor=2.0,   # >1 => profils plus lisses (noeuds plus espacés + interpolation linéaire)
+)
+
+# nombre de pas entre deux changements de demande, pour information
+POWER_PROFILE_CONFIG["step_time_steps"] = int(
+    POWER_PROFILE_CONFIG["step_time"] / SIMULATION_PARAMS["dt"]
 )
 
 # --- Contraintes physiques / actionneurs (utilisées dans l'env Gym) ---
 # On exprime les rampes en K/min et kg/s/min puis on les convertit en "par pas" via dt.
 _dt = SIMULATION_PARAMS["dt"]
 _ramp_up_K_per_min = 3.0      # montée max ≈ 3 °C/min
-_ramp_down_K_per_min = 30.0   # descente max ≈ 30 °C/min
-_ramp_flow_kgps_per_min = 6.0 # variation débit ≈ 6 kg/s par minute
+_ramp_down_K_per_min = 20.0   # descente max ≈ 20 °C/min
+_ramp_flow_kgps_per_min = 3.0 # variation débit ≈ 3 kg/s par minute
 
 CONTROL_LIMITS = dict(
     temp_min=50.0,
