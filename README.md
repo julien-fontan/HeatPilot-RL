@@ -88,7 +88,7 @@ $$
 P = \dot m g H / \eta \approx 1000 \cdot \dot m
 $$
 
-Par exemple, pour \( \dot m = 16\ \text{kg/s} \), on obtient \( P_{\text{pompe}} \approx 16\ \text{kW} \), ce qui correspond à l’ordre de grandeur attendu pour un réseau de quelques MW avec ~100–150 kPa de pertes de charge et un rendement pompe + moteur ~60 %.
+Par exemple, pour $\dot{m} = 16\ \text{kg/s}$, on obtient $P_{\text{pompe}} \approx 16\ \text{kW}$, ce qui correspond à l’ordre de grandeur attendu pour un réseau de quelques MW avec ~100–150 kPa de pertes de charge et un rendement pompe + moteur ~60 %.
 
 **On ne cherche pas ici à modéliser précisément l’hydraulique**, mais à obtenir :
 - une **pénalisation énergétique croissante avec le débit**,
