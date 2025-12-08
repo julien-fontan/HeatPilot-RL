@@ -29,7 +29,7 @@ MIN_RETURN_TEMP = 40.0  # °C
 SIMULATION_PARAMS = dict(
     dx=0.01,               # m
     t_max_day=24 * 3600.0, # s (un épisode simulé = 1 journée)
-    dt=10,               # pas de contrôle (s)
+    dt=0.1,               # pas de contrôle (s)
     rtol=1e-4,             # tolérance relative solveur ODE (°0.0001×70 ≈ 0.007°C)
     atol=1e-4,             # tolérance absolue solveur ODE (en °C) (négligeable par rapport aux variations de contrôle (0.5°C par pas, etc.)
     warmup=50             # Durée de pré-chauffe (warmup) avant la simulation principale (s)

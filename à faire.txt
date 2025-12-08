@@ -1,0 +1,109 @@
+A faire maintenant :
+    - génération aléatoire de puissances (ordre grandeur ??) à tirer pour tous les noeuds (assez orientée selon la journée quand même)
+    - amplitude dans laquelle le débit massique peut évoluer de manière réaliste
+        (on fixe une amplitude de débit ou de puissance de pompe)
+    - fonction qui cré le dictionnaire de décision des fractions
+
+A faire plus tard :
+    - mettre en place une stratégie de gestion "classique" (se renseigner donc)
+    - apporter de la cohérence sur les grandeurs physiques générées : les puissances demandées par les habitations
+    - prendre en compte d'autres paramètres : énergies intermittentes, ...
+
+Minimiser :
+    - la différence entre la puissance voulue et fournie (confort)
+    - les pertes thermiques calculées
+    - la puissance délivrée par la pompe (contrainte de consommation)
+    - ...
+
+Variables (discrètes) :
+    - température d'entrée
+        -> contraintes : [min,max], [variation min, variation max]
+    - débit massique entrée
+        -> contraintes : puissance ou vitesse max ??
+    - ouverture des vannes (∈ [0,1])
+
+Axes d'amélio :
+    - calculer les pertes de charges au fur et à mesure de l'aller
+    - implémenter une fonction permettant de déterminer le tracé de l'eau sur le retour
+    - faire revenir l'eau : l'eau se mixe avec celle en amont
+    - température finale de l'eau une fois de retour ?
+        puissance nécessaire pour la chauffer de nouveau ?
+        pour refroidir on mélange avec de l'eau froide ?
+    - Actuellement, un épisode dure 1 journée (un step tous les .. secondes). Cela n'est pas jutsifié pour l'instant car les puissances demandées sont purement aléatoires.
+        En revanche, si on essaie de coller par le futur plus à la réalité, la modélisation sur un jour entier devient nécessaire (la demande de chaleur la matin ou le soir n'est pas la même que celle en journée).
+        Aussi, cela pourra permettre dans le futur de tenir compte de phénomènes externes dépendant également de l'heure de la journée (prix de l'élec, ensoleillement et photovoltaique...)
+
+
+
+L'expression "pas d'images" fait référence à la nature des données que l'environnement envoie à l'agent (l'espace d'observation).
+
+Cela justifie le choix de l'architecture du réseau de neurones :
+
+MlpPolicy (Multi-Layer Perceptron) :
+
+Utilisée quand l'observation est un vecteur de nombres (données structurées).
+Exemple : L'agent reçoit une liste de valeurs physiques comme [position_x=1.2, vitesse=0.5, angle=0.1].
+C'est le cas ici ("pas d'images"), donc on utilise un réseau de neurones dense classique.
+CnnPolicy (Convolutional Neural Network) :
+
+Aurait été nécessaire si l'observation était une image (matrice de pixels).
+Exemple : L'agent "regarde" l'écran d'un jeu vidéo (Atari, Mario) et reçoit une matrice de taille (hauteur, largeur, couleurs).
+En résumé, le commentaire explique que puisque l'agent ne "voit" pas de pixels mais reçoit des coordonnées ou des mesures directes, il faut utiliser MlpPolicy.
+
+
+
+qu'a-t-on besoin pour vectoriser ?
+- areas (1D, n_pipes)
+- mass_flows (1D, n_pipes)
+
+
+
+expliquer puissance de pompage électrique, chaudière en apoint de géothermie souvent
+
+
+# ---------------------------
+# Analyse dimensionnelle grossière
+# ---------------------------
+# Avec ton exemple (ordre de grandeur) :
+#   P_demand_tot ≈ 2 200 kW
+#   P_source     ≈ 3 750 kW   (chaleur, majoritairement géothermie → coût faible)
+#   P_pump       ≈    15 kW   (électrique → coût élevé)
+#
+# Reward actuelle :
+#   reward = - ( 1e-4 * total_mismatch
+#              + 1e-5 * p_source
+#              + 1e-2 * p_pump )
+#
+# Si on regarde les P en kW et les pondérations effectives par kW :
+#   - Terme confort     : 1e-4 * (ΔP en W)
+#       →  1e-4 * 1 000  = 0.1  par kW d'erreur
+#
+#   - Terme source      : 1e-5 * (P_source en W)
+#       →  1e-5 * 1 000  = 0.01 par kW de chaleur produite
+#
+#   - Terme pompe       : 1e-2 * (P_pump en W)
+#       →  1e-2 * 1 000  = 10   par kW électrique pompé
+#
+# Avec tes ordres de grandeur (hypothèse total_mismatch ≈ P_demand_tot pour illustrer) :
+#   - 1e-4 * 2 200 000 W ≈ 220   (confort)
+#   - 1e-5 * 3 750 000 W ≈ 37.5  (source)
+#   - 1e-2 *   15 000 W ≈ 150    (pompe)
+#
+# Conclusion :
+#   - Confort (mismatch) domine, ce qui est cohérent.
+#   - Coût pompe (électrique) est du même ordre que le confort
+#     malgré seulement 15 kW, grâce au poids 10 / kW.
+#   - Coût chaleur source est relativement plus faible (~37.5) :
+#     ce qui est logique si la chaleur est "peu chère" (géothermie) par rapport à l'électricité.
+#
+# Donc qualitativement, la reward respecte bien ton contexte :
+#   - priorité au confort,
+#   - on ne "massacre" pas la géothermie (coût modéré),
+#   - on rend l'électricité de pompage chère, donc on incite à limiter le débit.
+#
+# Si tu veux encore plus refléter :
+#   - chaleur géothermique quasi gratuite  → diminuer 1e-5 (ex: 1e-6),
+#   - électricité très chère              → augmenter 1e-2 (ex: 5e-2),
+# tout en gardant la pondération du mismatch assez haute.
+#
+# reward = - (1.0e-4 * total_mismatch + 1.0e-5 * p_source + 1.0e-2 * p_pump)

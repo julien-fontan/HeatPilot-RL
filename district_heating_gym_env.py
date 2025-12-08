@@ -271,7 +271,7 @@ class HeatNetworkEnv(gym.Env):
 
         # --- Coût à la source ---
         p_source = self.actual_mass_flow * cp * (self.actual_inlet_temp - MIN_RETURN_TEMP)
-        p_pump = 1000.0 * self.actual_mass_flow
+        p_pump = 1000.0 * self.actual_mass_flow  # pas de modèle hydraulique, on prend un deltaP fixé arbitraire
 
         reward = - (1.0e-4 * total_mismatch + 1.0e-5 * p_source + 1.0e-2 * p_pump)
 

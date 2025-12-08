@@ -613,3 +613,56 @@ class DistrictHeatingNetwork:
             fill_value=(p_arr[0], p_arr[-1]),
         )
         return f(t_eval)
+
+    def _evaluate_inlet_signals(self, t_eval):
+        """
+        Évalue les signaux d'entrée (débit massique et température source) sur t_eval.
+
+        t_eval : float ou array-like de temps (s).
+
+        Retourne:
+            m_dot_t : np.ndarray de même shape que t_eval (kg/s)
+            T_in_t  : np.ndarray de même shape que t_eval (°C)
+        """
+        t_arr = np.atleast_1d(t_eval)
+
+        # Débit
+        if callable(self.inlet_mass_flow):
+            m_dot_t = np.array([float(self.inlet_mass_flow(ti)) for ti in t_arr], dtype=float)
+        else:
+            m_dot_t = np.full_like(t_arr, float(self.inlet_mass_flow), dtype=float)
+
+        # Température
+        if callable(self.inlet_temp):
+            T_in_t = np.array([float(self.inlet_temp(ti)) for ti in t_arr], dtype=float)
+        else:
+            T_in_t = np.full_like(t_arr, float(self.inlet_temp), dtype=float)
+
+        return m_dot_t, T_in_t
+
+    def get_boiler_power(self, t_eval):
+        """
+        Retourne la puissance fournie par la chaudière P_boiler(t) sur t_eval.
+
+        Convention identique à l'env Gym:
+            P_boiler(t) = m_dot(t) * cp * (T_in(t) - MIN_RETURN_TEMP)
+
+        t_eval : float ou array-like (s).
+        Retourne un np.ndarray (même shape que t_eval) en Watts.
+        """
+        t_arr = np.atleast_1d(t_eval)
+        m_dot_t, T_in_t = self._evaluate_inlet_signals(t_arr)
+        p_boiler = m_dot_t * self.cp * (T_in_t - MIN_RETURN_TEMP)
+        return p_boiler if np.ndim(t_eval) else float(p_boiler[0])
+
+    def get_pump_power(self, t_eval):
+        """
+        Retourne la puissance de pompage P_pump(t) sur t_eval.
+
+        Même convention que dans l'environnement Gym:
+            P_pump(t) = 1000.0 * m_dot(t)
+        """
+        t_arr = np.atleast_1d(t_eval)
+        m_dot_t, _ = self._evaluate_inlet_signals(t_arr)
+        p_pump = 1000.0 * m_dot_t
+        return p_pump if np.ndim(t_eval) else float(p_pump[0])

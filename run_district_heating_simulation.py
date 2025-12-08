@@ -119,20 +119,29 @@ def run_simulation():
     )
     print("Simulation terminée.")
 
-    # --- Puissances totales sur la phase principale ---
+    # --- Puissances totales sur la phase principale (côté consommateurs) ---
     p_demand_tot = network.get_total_power_demand(sol.t)      # W
     p_supplied_tot = network.get_total_power_supplied(sol.t)  # W
 
+    # --- Puissances chaudière + pompe (côté production) via getters ---
+    p_boiler = network.get_boiler_power(sol.t)  # W
+    p_pump = network.get_pump_power(sol.t)      # W
+
+    # --- Figures ---
+    time_hours = sol.t / 3600.0
+
+    # 1) Bilan demande vs fournie aux consommateurs
     plt.figure(figsize=(8, 4))
-    plt.plot(sol.t / 3600.0, p_demand_tot / 1e3, label="P_demand_tot (kW)")
-    plt.plot(sol.t / 3600.0, p_supplied_tot / 1e3, label="P_supplied_tot (kW)")
+    plt.plot(time_hours, p_demand_tot / 1e3, label="P_demand_tot (kW)")
+    plt.plot(time_hours, p_supplied_tot / 1e3, label="P_supplied_tot (kW)")
+    plt.plot(time_hours, p_boiler / 1e3, label="P_boiler (kW)")
     plt.xlabel("Temps (h)")
     plt.ylabel("Puissance (kW)")
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
     plt.show()
-    # plt.savefig("power_balance.png", dpi=150)
+    # plt.savefig("power_balance_consumers.png", dpi=150)
 
     # # --- Visualisation 1D (déjà existante) ---
     # pipe_idx = 0
