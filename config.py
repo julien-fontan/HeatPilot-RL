@@ -84,7 +84,7 @@ CONTROL_LIMITS = dict(
 
 # --- Paramètres d'entraînement RL ---
 _episode_length_steps = int(SIMULATION_PARAMS["t_max_day"] / dt_rl)
-_total_episodes = 10
+_total_episodes = 100
 _total_timesteps = _episode_length_steps * _total_episodes
 RL_TRAINING = dict(
     dt=dt_rl,                            # pas de contrôle explicite RL
@@ -92,7 +92,7 @@ RL_TRAINING = dict(
     episode_length_steps=_episode_length_steps,
     n_steps_update=200,
     learning_rate=3e-4,
-    save_freq_episodes=1,
+    save_freq_episodes=10,
     use_s3_checkpoints=False,  # False = uniquement local, True = local + S3
 )
 
