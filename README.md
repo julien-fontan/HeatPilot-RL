@@ -158,7 +158,7 @@ Le cœur du code se trouve dans `district_heating_model.py`. Nous utilisons une 
 
 ### 3.2. L'Équation de la Conduite (Pipe)
 
-Chaque tuyau est divisé en petits segments (cellules) de longueur \( dx \). L'évolution de la température \( T \) suit :
+Chaque tuyau est divisé en petits segments (cellules) de longueur $dx$. L'évolution de la température $T$ suit :
 
 $$
 \frac{\partial T}{\partial t}
@@ -168,11 +168,11 @@ $$
 $$
 
 Où :
-- \( v \) : vitesse du fluide (m/s),
-- \( h \) : coefficient de perte thermique (W/m²/K),
-- \( D \) : diamètre du tuyau,
-- \( T_{ext} \) : température du sol,
-- \( \alpha = \lambda / (\rho c_p) \) : diffusivité thermique effective (souvent négligée).
+- $v$ : vitesse du fluide (m/s),
+- $h$ : coefficient de perte thermique (W/m²/K),
+- $D$ : diamètre du tuyau,
+- $T_{ext}$ : température du sol,
+- $\alpha = \lambda / (\rho c_p)$ : diffusivité thermique effective (souvent négligée).
 
 **Discrétisation numérique (`Pipe.compute_derivatives`) :**
 
@@ -186,9 +186,9 @@ $$
 
 avec :
 
-- \( \dot{m} \) : débit massique (kg/s),
-- \( A \) : aire de section intérieure du tube,
-- \( \lambda = \frac{4 h}{\rho c_p D} \).
+- $\dot{m}$ : débit massique (kg/s),
+- $A$ : aire de section intérieure du tube,
+- $\lambda = \frac{4 h}{\rho c_p D}$.
 
 **Pourquoi un schéma upwind ?**
 - Il est **numériquement stable** pour l’advection pure,
@@ -220,7 +220,7 @@ $$
 Calculé dans `_solve_nodes_temperature`.
 
 3. **Soutirage de puissance aux nœuds consommateurs :**  
-Pour chaque nœud consommateur, une puissance demandée \( P_{demand}(t) \) est générée (profil en escalier).  
+Pour chaque nœud consommateur, une puissance demandée $P_{demand}(t)$ est générée (profil en escalier).  
 Le réseau fournit une puissance :
 
 $$
@@ -230,14 +230,14 @@ $$
 Dans `_apply_node_power_consumption`, on impose une chute de température locale :
 
 $$
-T_{out} = \max\left(T_{in} - \frac{P_{supplied}}{\dot{m}_{in} c_p},\ T_{\min,return}\right)
+T_{\text{out}} = \max\left(T_{\text{in}} - \frac{P_{\text{supplied}}}{\dot{m}_{\text{in}} c_p},\ T_{\text{min return}}\right)
 $$
 
-avec \( T_{\min,return} = \) `MIN_RETURN_TEMP` (40 °C), bornant la température de retour.
+avec $T_{\text{min return}} =$ `MIN_RETURN_TEMP` (40 °C), bornant la température de retour.
 
-**Justification de \( T_{\min,return} \) :**
+**Justification de $T_{\text{min return}}$ :**
 - Physiquement, on ne peut pas extraire une puissance infinie : la température de retour ne peut pas descendre en dessous de la température ambiante du bâtiment / des retours des émetteurs.
-- Cela évite des débits nuls accompagnés de chutes de température irréalistes, et donne une puissance maximale soutirable \( P_{\max} = \dot{m}_{in} c_p (T_{in} - T_{\min,return}) \).
+- Cela évite des débits nuls accompagnés de chutes de température irréalistes, et donne une puissance maximale soutirable $P_{\max} = \dot{m}_{in} c_p (T_{in} - T_{\text{min return}})$.
 
 ---
 
@@ -384,9 +384,9 @@ Cela :
 
 **[TODO FIGURE 1]**  
 À cet endroit, vous pouvez insérer un graphique `power_balance.png` illustrant :
-- \( P_{demand\_tot} \),
-- \( P_{supplied\_tot} \),
-- \( P_{boiler} \),
+- $P_{demand\_tot}$,
+- $P_{supplied\_tot}$,
+- $P_{boiler}$,
 en fonction du temps. Il est déjà en partie généré dans `run_district_heating_simulation.py`.
 
 ### 6.3. Étape 2 : Entraîner l'IA
@@ -456,9 +456,9 @@ Cette section décrit la structure d’analyse à mettre en place une fois que v
 
 À calculer sur un épisode de test :
 
-- **Énergie totale demandée** vs fournie (intégrale de \( P_{demand\_tot} \) et \( P_{supplied\_tot} \)).
-- **Énergie chaudière** (intégrale de \( P_{boiler}(t) \)).
-- **Énergie de pompage** (intégrale de \( P_{pump}(t) \)).
+- **Énergie totale demandée** vs fournie (intégrale de $P_{demand\_tot}$ et $P_{supplied\_tot}$).
+- **Énergie chaudière** (intégrale de $P_{boiler}(t)$).
+- **Énergie de pompage** (intégrale de $P_{pump}(t)$).
 - **Écart confort moyen et max** :
 
 $$

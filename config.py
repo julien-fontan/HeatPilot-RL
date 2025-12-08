@@ -59,14 +59,20 @@ POWER_PROFILE_CONFIG = dict(
 )
 
 # --- Contraintes physiques / actionneurs (utilisées dans l'env Gym) ---
+# On exprime les rampes en K/min et kg/s/min puis on les convertit en "par pas" via dt.
+_dt = SIMULATION_PARAMS["dt"]
+_ramp_up_K_per_min = 3.0      # montée max ≈ 3 °C/min
+_ramp_down_K_per_min = 30.0   # descente max ≈ 30 °C/min
+_ramp_flow_kgps_per_min = 6.0 # variation débit ≈ 6 kg/s par minute
+
 CONTROL_LIMITS = dict(
-    temp_min=60.0,
+    temp_min=50.0,
     temp_max=110.0,
-    flow_min=1.0,
+    flow_min=3.0,
     flow_max=30.0,
-    max_temp_rise_per_dt=0.5,  # °C / 10 s
-    max_temp_drop_per_dt=5.0,  # °C / 10 s
-    max_flow_delta_per_dt=1.0, # kg/s / 10 s
+    max_temp_rise_per_dt=_ramp_up_K_per_min * _dt / 60.0,
+    max_temp_drop_per_dt=_ramp_down_K_per_min * _dt / 60.0,
+    max_flow_delta_per_dt=_ramp_flow_kgps_per_min * _dt / 60.0,
 )
 
 _episode_length_steps = int(SIMULATION_PARAMS["t_max_day"] / SIMULATION_PARAMS["dt"])
