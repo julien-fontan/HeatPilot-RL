@@ -101,6 +101,9 @@ def evaluate_and_plot(model_path: str | None = None):
         history["p_demand_tot"].append(env.last_total_p_demand)
         history["p_supplied_tot"].append(env.last_total_p_supplied)
 
+    print(history["T_inlet"])
+    print(history["mass_flow"])
+
     # 3. Tracer les courbes principales (températures, débit, reward)
     time_axis = np.array(history["time"]) / 3600.0  # Heures
     

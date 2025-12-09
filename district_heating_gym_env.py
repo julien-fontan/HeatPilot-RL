@@ -29,7 +29,8 @@ class HeatNetworkEnv(gym.Env):
         self.t_max = SIMULATION_PARAMS["t_max_day"] # Une journée
         self.dx = SIMULATION_PARAMS["dx"]
         # Limite dure sur le nombre de pas par épisode
-        self.max_steps = int(2 * 3600 / self.dt)    # ex: 2h simulées max → 2h/dt pas
+        # Ancien code: self.max_steps = int(2 * 3600 / self.dt)  # ~2 h max
+        self.max_steps = RL_TRAINING["episode_length_steps"]    # horizon complet = t_max_day / dt
 
         self.props = PHYSICAL_PROPS
 
