@@ -23,7 +23,7 @@ PHYSICAL_PROPS = dict(
 )
 
 # Température minimale de retour (utilisée pour le soutirage de puissance ET l'état initial)
-MIN_RETURN_TEMP = 40.0  # °C
+MIN_RETURN_TEMP = 40.0      # °C
 
 # --- Paramètres de discrétisation / simulation "physique" ---
 SIMULATION_PARAMS = dict(
@@ -36,11 +36,11 @@ SIMULATION_PARAMS = dict(
 
 # --- Paramètres de génération des conduites (Pipe.generate_parameters) ---
 PIPE_GENERATION = dict(
-    length_min=50.0,    # m, longueur minimale d'une conduite
-    length_max=300.0,   # m, longueur maximale d'une conduite
-    diameter_min=0.15,  # m
-    diameter_max=0.35,  # m
-    h_min=0.90,         # W/m²/K (ou équivalent utilisé dans Pipe)
+    length_min=50.0,        # m, longueur minimale d'une conduite
+    length_max=300.0,       # m, longueur maximale d'une conduite
+    diameter_min=0.15,      # m
+    diameter_max=0.35,      # m
+    h_min=0.90,             # W/m²/K (ou équivalent utilisé dans Pipe)
     h_max=1.75,
 )
 
@@ -55,10 +55,10 @@ dt_rl = 10  # s, pas de contrôle explicite pour le RL et pour les profils "disc
 
 # --- Paramètres des profils de puissance demandée aux consommateurs ---
 POWER_PROFILE_CONFIG = dict(
-    p_min=100_000.0,     # W
-    p_max=300_000.0,     # W
-    step_time=3600.0,    # s entre deux changements (échelle "macro")
-    smooth_factor=2.0,   # >1 => profils plus lisses
+    p_min=100_000.0,        # W
+    p_max=300_000.0,        # W
+    step_time=3600.0,       # s entre deux changements (échelle "macro")
+    smooth_factor=2.0,      # >1 => profils plus lisses
 )
 
 # nombre de pas RL entre deux changements de demande, pour information
@@ -68,9 +68,9 @@ POWER_PROFILE_CONFIG["step_time_steps"] = int(
 
 # --- Contraintes physiques / actionneurs (utilisées dans l'env Gym) ---
 # On exprime les rampes en K/min et kg/s/min puis on les convertit en "par pas" via dt_rl.
-_ramp_up_K_per_min = 3.0      # montée max ≈ 3 °C/min
-_ramp_down_K_per_min = 20.0   # descente max ≈ 20 °C/min
-_ramp_flow_kgps_per_min = 3.0 # variation débit ≈ 3 kg/s par minute
+_ramp_up_K_per_min = 3.0        # montée max ≈ 3 °C/min
+_ramp_down_K_per_min = 20.0     # descente max ≈ 20 °C/min
+_ramp_flow_kgps_per_min = 3.    # variation débit ≈ 3 kg/s par minute
 
 CONTROL_LIMITS = dict(
     temp_min=50.0,
@@ -86,11 +86,12 @@ CONTROL_LIMITS = dict(
 _episode_length_steps = int(SIMULATION_PARAMS["t_max_day"] / dt_rl)
 _total_episodes = 100
 _total_timesteps = _episode_length_steps * _total_episodes
+_n_steps_update = int((5 * 60) / dt_rl)    # nb de pas entre 2 mises à jour PPO (10 min)
 RL_TRAINING = dict(
     dt=dt_rl,                            # pas de contrôle explicite RL
     total_timesteps=_total_timesteps,
     episode_length_steps=_episode_length_steps,
-    n_steps_update=200,
+    n_steps_update=_n_steps_update,
     learning_rate=3e-4,
     save_freq_episodes=10,
     use_s3_checkpoints=False,  # False = uniquement local, True = local + S3
