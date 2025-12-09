@@ -25,6 +25,13 @@ PHYSICAL_PROPS = dict(
 # Température minimale de retour (utilisée pour le soutirage de puissance ET l'état initial)
 MIN_RETURN_TEMP = 40.0      # °C
 
+# --- Poids de la fonction de récompense (pénalités RL) ---
+REWARD_WEIGHTS = dict(
+    mismatch=1.0e-3,   # pénalité sur |P_supplied - P_demand|
+    boiler=1.0e-6,     # pénalité sur la puissance chaudière
+    pump=5.0e-4,       # pénalité sur la puissance de pompage
+)
+
 # --- Paramètres de discrétisation / simulation "physique" ---
 SIMULATION_PARAMS = dict(
     dx=10,                  # m, influence énormément la durée de la simulation
@@ -58,7 +65,7 @@ POWER_PROFILE_CONFIG = dict(
     p_min=100_000.0,        # W
     p_max=300_000.0,        # W
     step_time=3600.0,       # s entre deux changements (échelle "macro")
-    smooth_factor=2.0,      # >1 => profils plus lisses
+    smooth_factor=1.0,      # >1 => profils plus lisses
 )
 
 # nombre de pas RL entre deux changements de demande, pour information

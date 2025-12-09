@@ -199,6 +199,11 @@ class DistrictHeatingNetwork:
         self.total_power_demand = []     # somme P_target(t) pour tous les noeuds avec demande
         self.total_power_supplied = []   # somme P_effective(t) réellement soutirée
 
+        # Nouvelles structures : puissances par noeud (demande / fournie)
+        self.node_power_demand_per_node = {}    # node_id -> [P_demand(t_k)]
+        self.node_power_supplied_per_node = {}  # node_id -> [P_supplied(t_k)]
+        self._nodes_with_demand = sorted(self.node_power_funcs.keys())
+
         # Flag pour ignorer le tout premier point (état initial "froid")
         self._has_recorded_first_step = False
 
@@ -217,6 +222,10 @@ class DistrictHeatingNetwork:
         self.power_time = []
         self.total_power_demand = []
         self.total_power_supplied = []
+        # reset des séries par noeud
+        self._nodes_with_demand = sorted(self.node_power_funcs.keys())
+        self.node_power_demand_per_node = {nid: [] for nid in self._nodes_with_demand}
+        self.node_power_supplied_per_node = {nid: [] for nid in self._nodes_with_demand}
         self._has_recorded_first_step = False
 
         fun = lambda t, y: self.compute_system_dynamics(t, y)
@@ -245,6 +254,9 @@ class DistrictHeatingNetwork:
         # 3. Application optionnelle des soutirages de puissance aux noeuds
         total_p_demand = 0.0
         total_p_supplied = 0.0
+        # dictionnaires pour ce pas de temps (par noeud)
+        step_node_demand = {}
+        step_node_supplied = {}
         if self.node_power_funcs:
             # on a besoin des températures AVANT et APRÈS soutirage pour calculer P_effective
             parents_map = self.graph.get_parent_nodes()
@@ -260,6 +272,8 @@ class DistrictHeatingNetwork:
 
                 parents = parents_map.get(node_id, [])
                 if not parents:
+                    step_node_demand[node_id] = p_target
+                    step_node_supplied[node_id] = 0.0
                     continue
 
                 m_in = 0.0
@@ -269,6 +283,8 @@ class DistrictHeatingNetwork:
                     m_in += mass_flows[pipe_idx]
 
                 if m_in <= 0.0:
+                    step_node_demand[node_id] = p_target
+                    step_node_supplied[node_id] = 0.0
                     continue
 
                 node_idx = self.graph.get_id_from_node(node_id)
@@ -278,6 +294,9 @@ class DistrictHeatingNetwork:
                 # puissance réellement soutirée à ce noeud (bornée implicitement par t_min_return)
                 p_effective = self.cp * m_in * max(T_in - T_out, 0.0)
                 total_p_supplied += p_effective
+
+                step_node_demand[node_id] = p_target
+                step_node_supplied[node_id] = p_effective
 
         # stock pour inspection depuis l'extérieur
         self.last_node_temps = node_temps
@@ -291,6 +310,10 @@ class DistrictHeatingNetwork:
             self.power_time.append(float(t))
             self.total_power_demand.append(total_p_demand)
             self.total_power_supplied.append(total_p_supplied)
+            # enregistrement par noeud (si demande définie)
+            for nid in self._nodes_with_demand:
+                self.node_power_demand_per_node[nid].append(step_node_demand.get(nid, 0.0))
+                self.node_power_supplied_per_node[nid].append(step_node_supplied.get(nid, 0.0))
 
         # 4. Physique par conduite
         for i, p in enumerate(self.pipes):
@@ -677,3 +700,53 @@ class DistrictHeatingNetwork:
         m_dot_t, _ = self._evaluate_inlet_signals(t_arr)
         p_pump = 1000.0 * m_dot_t
         return p_pump if np.ndim(t_eval) else float(p_pump[0])
+
+    def get_nodes_power(self, t_eval):
+        """
+        Retourne, pour chaque noeud ayant une demande de puissance, les puissances
+        demandée et effectivement soutirée en fonction du temps t_eval.
+
+        t_eval : array-like (s) ou scalaire.
+
+        Retourne:
+            node_ids      : liste triée des ids de noeuds (avec demande)
+            p_demand_mat  : array (n_nodes, len(t_eval)) en W
+            p_supplied_mat: array (n_nodes, len(t_eval)) en W
+        """
+        if not self.power_time or not self.node_power_demand_per_node:
+            t_arr = np.atleast_1d(t_eval)
+            return [], np.zeros((0, t_arr.size), dtype=float), np.zeros((0, t_arr.size), dtype=float)
+
+        t_arr_src = np.array(self.power_time, dtype=float)
+        t_arr_eval = np.atleast_1d(t_eval).astype(float)
+
+        node_ids = sorted(self.node_power_demand_per_node.keys())
+        n_nodes = len(node_ids)
+        n_t = t_arr_eval.size
+
+        p_demand_mat = np.zeros((n_nodes, n_t), dtype=float)
+        p_supplied_mat = np.zeros((n_nodes, n_t), dtype=float)
+
+        for i, nid in enumerate(node_ids):
+            p_dem_series = np.array(self.node_power_demand_per_node[nid], dtype=float)
+            p_sup_series = np.array(self.node_power_supplied_per_node[nid], dtype=float)
+
+            f_dem = interp1d(
+                t_arr_src,
+                p_dem_series,
+                kind="previous",
+                bounds_error=False,
+                fill_value=(p_dem_series[0], p_dem_series[-1]),
+            )
+            f_sup = interp1d(
+                t_arr_src,
+                p_sup_series,
+                kind="previous",
+                bounds_error=False,
+                fill_value=(p_sup_series[0], p_sup_series[-1]),
+            )
+
+            p_demand_mat[i, :] = f_dem(t_arr_eval)
+            p_supplied_mat[i, :] = f_sup(t_arr_eval)
+
+        return node_ids, p_demand_mat, p_supplied_mat

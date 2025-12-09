@@ -2,7 +2,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 from district_heating_model import Pipe, DistrictHeatingNetwork
-from utils import generate_step_function, generate_smooth_profile
+from utils import generate_smooth_profile
 from graph_utils import Graph
 from config import (
     PHYSICAL_PROPS,
@@ -14,7 +14,8 @@ from config import (
     POWER_PROFILE_CONFIG,
     MIN_RETURN_TEMP,
     PIPE_GENERATION,
-    RL_TRAINING,               # <-- import dt RL
+    RL_TRAINING,
+    REWARD_WEIGHTS,
 )
 
 class HeatNetworkEnv(gym.Env):
@@ -285,7 +286,14 @@ class HeatNetworkEnv(gym.Env):
         p_source = self.actual_mass_flow * cp * (self.actual_inlet_temp - MIN_RETURN_TEMP)
         p_pump = 1000.0 * self.actual_mass_flow  # pas de modèle hydraulique, on prend un deltaP fixé arbitraire
 
-        reward = - (1.0e-4 * total_mismatch + 1.0e-5 * p_source + 1.0e-2 * p_pump)
+        # Nouvelle fonction de récompense :
+        # mismatch (confort) >> coûts énergétiques
+        w = REWARD_WEIGHTS
+        reward = - (
+            w["mismatch"] * total_mismatch
+            + w["boiler"]   * p_source
+            + w["pump"]     * p_pump
+        )
 
         # mémoriser pour render()
         self.last_total_p_demand = total_p_demand

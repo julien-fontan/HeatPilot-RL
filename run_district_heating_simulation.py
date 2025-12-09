@@ -64,11 +64,11 @@ def run_simulation():
         pipes_list.append(p)
 
     # Température source en entrée
-    inlet_temp = 100.0  # °C constante
+    inlet_temp = 60.0  # °C constante
     # inlet_temp = generate_step_function(t_max_day, 900.0, 70.0, 90.0, seed=seed)   # °C
 
     # Débit massique en entrée
-    inlet_mass_flow = 15.0  # kg/s constant
+    inlet_mass_flow = 5.0  # kg/s constant
     # inlet_mass_flow = generate_step_function(t_max_day, 900.0, 10.0, 20.0, seed=seed)  # kg/s
 
     # Profils de puissance demandée par les noeuds consommateurs
@@ -132,6 +132,10 @@ def run_simulation():
     p_demand_tot = network.get_total_power_demand(sol.t)      # W
     p_supplied_tot = network.get_total_power_supplied(sol.t)  # W
 
+    # --- Puissances par noeud (demande / fournie) ---
+    node_ids, p_nodes_demand, p_nodes_supplied = network.get_nodes_power(sol.t)
+    # p_nodes_* : shape (n_nodes, len(sol.t))
+
     # --- Puissances chaudière + pompe (côté production) via getters ---
     p_boiler = network.get_boiler_power(sol.t)  # W
     p_pump = network.get_pump_power(sol.t)      # W
@@ -139,7 +143,7 @@ def run_simulation():
     # --- Figures ---
     time_hours = sol.t / 3600.0
 
-    # 1) Bilan demande vs fournie aux consommateurs
+    # 1) Bilan demande vs fournie aux consommateurs (totale)
     plt.figure(figsize=(8, 4))
     plt.plot(time_hours, p_demand_tot / 1e3, label="P_demand_tot (kW)")
     plt.plot(time_hours, p_supplied_tot / 1e3, label="P_supplied_tot (kW)")
@@ -150,13 +154,58 @@ def run_simulation():
     plt.legend()
     plt.tight_layout()
 
-    # Sauvegarde dans le dossier 'plots' (chemin absolu)
     plot_path = os.path.join(PLOTS_DIR, "power_balance_consumers.png")
     plt.savefig(plot_path, dpi=150)
     print(f"Figure sauvegardée dans {plot_path}")
     plt.show()
-    # plt.savefig("power_balance_consumers.png", dpi=150)
 
+    # 2) Puissances par noeud (demande / fournie)
+    if node_ids:
+        # Ne garder que les noeuds 1 à 6
+        indices_to_plot = [i for i, nid in enumerate(node_ids) if 1 <= nid <= 6]
+
+        if indices_to_plot:
+            plt.figure(figsize=(10, 6))
+            # fréquence des marqueurs : ~200 marqueurs max sur la courbe
+            n_points = len(time_hours)
+            marker_every = 100
+
+            for i in indices_to_plot:
+                nid = node_ids[i]
+                # première courbe (demande) : trait continu + ronds, marqueurs espacés
+                line, = plt.plot(
+                    time_hours,
+                    p_nodes_demand[i] / 1e3,
+                    linestyle="-",
+                    marker="o",
+                    markevery=marker_every,
+                    markersize=4,
+                    linewidth=1,
+                    label=f"P_demand node {nid} (kW)",
+                )
+                color = line.get_color()
+                # deuxième courbe (reçue) : même couleur, trait continu + triangles, même espacement
+                plt.plot(
+                    time_hours,
+                    p_nodes_supplied[i] / 1e3,
+                    linestyle="-",
+                    marker="^",
+                    markevery=marker_every,
+                    markersize=5,
+                    color=color,
+                    linewidth=1,
+                    label=f"P_supplied node {nid} (kW)",
+                )
+            plt.xlabel("Temps (h)")
+            plt.ylabel("Puissance (kW)")
+            plt.title("Puissances demandée / fournie (nœuds 1 à 6)")
+            plt.grid(True)
+            plt.legend(fontsize="small", ncol=2)
+            plt.tight_layout()
+            plot_path_nodes = os.path.join(PLOTS_DIR, "power_per_node_1_6.png")
+            plt.savefig(plot_path_nodes, dpi=150)
+            print(f"Figure (par noeud 1–6) sauvegardée dans {plot_path_nodes}")
+            plt.show()
     # # --- Visualisation 1D (déjà existante) ---
     # pipe_idx = 0
     # indices = network.pipe_slices[pipe_idx]
