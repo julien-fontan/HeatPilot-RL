@@ -78,7 +78,9 @@ def evaluate_and_plot(model_path: str | None = None):
         "T_inlet": [],
         "mass_flow": [],
         "rewards": [],
-        "consumer_temps": []  # Liste de listes
+        "consumer_temps": [],   # Liste de listes
+        "p_demand_tot": [],     # W
+        "p_supplied_tot": [],   # W
     }
 
     print("Début de l'évaluation...")
@@ -95,8 +97,11 @@ def evaluate_and_plot(model_path: str | None = None):
         history["mass_flow"].append(env.actual_mass_flow)
         history["rewards"].append(reward)
         history["consumer_temps"].append(obs[:n_consumers])
+        # puissances totales au pas courant (issues de HeatNetworkEnv.step)
+        history["p_demand_tot"].append(env.last_total_p_demand)
+        history["p_supplied_tot"].append(env.last_total_p_supplied)
 
-    # 3. Tracer les courbes
+    # 3. Tracer les courbes principales (températures, débit, reward)
     time_axis = np.array(history["time"]) / 3600.0  # Heures
     
     plt.figure(figsize=(12, 10))
@@ -131,6 +136,24 @@ def evaluate_and_plot(model_path: str | None = None):
     output_file = "evaluation_results.png"
     plt.savefig(output_file)
     print(f"Graphiques sauvegardés dans {output_file}")
+    plt.show()
+
+    # 4. Figure dédiée aux puissances demandée / fournie
+    p_demand = np.array(history["p_demand_tot"]) / 1e3     # kW
+    p_supplied = np.array(history["p_supplied_tot"]) / 1e3 # kW
+
+    plt.figure(figsize=(8, 4))
+    plt.plot(time_axis, p_demand, label="P_demand_tot (kW)")
+    plt.plot(time_axis, p_supplied, label="P_supplied_tot (kW)")
+    plt.xlabel("Temps (h)")
+    plt.ylabel("Puissance (kW)")
+    plt.title("Puissances totale demandée vs fournie")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    output_file2 = "evaluation_powers.png"
+    plt.savefig(output_file2)
+    print(f"Courbes de puissance sauvegardées dans {output_file2}")
     plt.show()
 
 if __name__ == "__main__":
