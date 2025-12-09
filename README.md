@@ -32,8 +32,9 @@ graph LR
     30 --> 31((31))
     31 --> 32((32))
 
-    classDef source fill=#ffdd99,stroke=#333,stroke-width=1px;
-    classDef consumer fill=#c6e9af,stroke=#333,stroke-width=1px;
+    %% Échappe les #
+    classDef source fill=\#ffdd99,stroke=\#333,stroke-width=1px;
+    classDef consumer fill=\#c6e9af,stroke=\#333,stroke-width=1px;
 
     class 1 source;
     class 6,11,32 consumer;
