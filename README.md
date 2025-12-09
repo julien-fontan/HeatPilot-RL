@@ -18,25 +18,20 @@ Un réseau de chaleur transporte de l'eau chaude depuis une centrale de producti
 Schéma du graphe principal utilisé dans `config.py` :
 
 ```mermaid
-%% filepath: c:\Users\juli1\Documents Drive\Projets\Recherche\HeatPilot-RL\README.md
 graph LR
-    %% Épine dorsale
-    1((1\nSource)) --> 2((2))
+    1((1<br/>Source)) --> 2((2))
     2 --> 3((3))
     3 --> 4((4))
     4 --> 5((5))
     5 --> 6((6))
 
-    %% Branche 3–10–11
     3 --> 10((10))
     10 --> 11((11))
 
-    %% Branche 5–30–31–32
     5 --> 30((30))
     30 --> 31((31))
     31 --> 32((32))
 
-    %% Styles (facultatifs)
     classDef source fill=#ffdd99,stroke=#333,stroke-width=1px;
     classDef consumer fill=#c6e9af,stroke=#333,stroke-width=1px;
 
