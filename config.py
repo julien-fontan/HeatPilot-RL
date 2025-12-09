@@ -96,14 +96,3 @@ RL_TRAINING = dict(
     save_freq_episodes=10,
     use_s3_checkpoints=False,  # False = uniquement local, True = local + S3
 )
-
-# Ancien réseau (env 5MW)
-# EDGES = [
-#     (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8), (8, 9),
-#     (8, 20),
-#     (7, 18), (18, 19),
-#     (6, 15), (15, 16),
-#     (5, 13), (13, 14),
-#     (4, 23), (23, 24),
-#     (3, 10), (10, 11),
-# ]

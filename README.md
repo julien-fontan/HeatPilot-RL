@@ -7,18 +7,47 @@ Ce document a pour but d'expliquer :
 - quelles sont les équations et hypothèses physiques,
 - quels ordres de grandeur issus de réseaux réels ont guidé le dimensionnement,
 - comment l'IA apprend à piloter le réseau,
-- et [à remplir] comment analyser les performances de l’agent entraîné.
+- et quelles sont les performances de l’agent entraîné.
 
 ---
 
 ## 1. Vue d'ensemble du problème
 
-Un réseau de chaleur transporte de l'eau chaude depuis une **centrale de production** (source) vers plusieurs **consommateurs** (bâtiments) via des canalisations isolées.
+Un réseau de chaleur transporte de l'eau chaude depuis une centrale de production vers plusieurs consommateurs (bâtiments) via des canalisations.
+
+Schéma du graphe principal utilisé dans `config.py` :
+
+```mermaid
+    %% Épine dorsale
+    1((1\nSource)) --> 2((2))
+    2 --> 3((3))
+    3 --> 4((4))
+    4 --> 5((5))
+    5 --> 6((6))
+
+    %% Branche 3–10–11
+    3 --> 10((10))
+    10 --> 11((11))
+
+    %% Branche 5–30–31–32
+    5 --> 30((30))
+    30 --> 31((31))
+    31 --> 32((32))
+
+    %% Styles (facultatifs)
+    classDef source fill=#ffdd99,stroke=#333,stroke-width=1px;
+    classDef consumer fill=#c6e9af,stroke=#333,stroke-width=1px;
+
+    class 1 source;
+    class 6,11,32 consumer;
+```
+
 
 **Le défi :**  
-Les consommateurs ont une demande de puissance variable (douche le matin, chauffage le soir). L'eau met du temps à voyager dans les tuyaux (retard thermique).
-- Si on chauffe trop : on gaspille de l'énergie (pertes thermiques, coût de pompage).
-- Si on ne chauffe pas assez : les consommateurs ont froid (inconfort).
+- Les consommateurs ont une demande de puissance variable à laquelle l'agent doit s'adapter dynamiquement. Celle-ci est générée aléatoirement dans ce projet, mais la variation de puissance est censée être représentative (douche le matin, chauffage le soir...).
+- L'eau met du temps à voyager dans les tuyaux (retard thermique). Une action prise à un moment $t$ ne se répercute qu'à $t+\Delta{t}$.
+- Si on augmente trop la température ou le débit en entrée : la consommation énergétique (chauffage de l'eau, pompage) et les pertes thermiques (proportionnelles à la température du fluide) augmentent.
+- Au contraire, si on diminue trop ces grandeurs : les consommateurs ont froid (inconfort).
 
 **L'objectif de l'IA :**  
 Anticiper les demandes et piloter la température et le débit à la source pour satisfaire les besoins tout en minimisant la consommation énergétique (chaudière + pompage).
@@ -522,4 +551,47 @@ Insérer un tableau récapitulatif :
 
 Pistes d’analyse supplémentaires (à implémenter plus tard) :
 
-- **Robustesse à des profils de demande non
+- **Robustesse à des profils de demande non anticipés** : tester avec des scénarios de demande différents de ceux vus pendant l’entraînement.
+- **Généralisation à d’autres topologies** : appliquer à des réseaux avec une topologie différente (plus ou moins de nœuds, configurations en étoile, maillées, etc.).
+- **Sensibilité aux paramètres** : variation systématique des paramètres (plages de température, capacités, etc.) pour évaluer l’impact sur la performance de l’agent.
+
+---
+
+## 9. Limitations Connues et Améliorations Futures
+
+1. **Approximation de l'hydraulique :**  
+   Le modèle actuel ne prend pas en compte la dynamique hydraulique détaillée (hauteur manométrique variable, pertes de charge non linéaires, etc.). Une modélisation plus précise pourrait améliorer la réalité des simulations.
+
+2. **Modèle de chaudière simplifié :**  
+   La chaudière est modélisée de manière simplifiée. Un modèle plus détaillé tenant compte des transitoires internes et des dynamiques de combustion pourrait être bénéfique.
+
+3. **Pas de gestion avancée des incertitudes :**  
+   Le modèle ne gère pas encore les incertitudes sur les demandes ou les temps de transport. L'intégration de telles incertitudes pourrait rendre l'agent RL plus robuste.
+
+4. **Scalabilité :**  
+   Bien que le modèle soit conçu pour être extensible, des tests sont nécessaires pour des réseaux beaucoup plus grands ou des simulations à très long terme.
+
+5. **Amélioration de l'interface utilisateur :**  
+   Développement d'interfaces plus conviviales pour la configuration des simulations, l'entraînement des agents et l'analyse des résultats.
+
+---
+
+## 10. Références et Ressources
+
+- Documentation sur les réseaux de chaleur : [lien vers le document d’annexe]
+- Stable Baselines3 (pour l'entraînement RL) : [lien vers la documentation]
+- Gymnasium (pour l'interface RL) : [lien vers la documentation]
+- TikZ (pour les schémas) : [lien vers la documentation]
+
+---
+
+## 11. Remerciements
+
+- À l'équipe de recherche pour le soutien et les retours.
+- À la communauté open-source pour les outils et bibliothèques utilisés.
+
+---
+
+## 12. Contact
+
+Pour toute question ou suggestion, contacter : [votre.email@exemple.com]
