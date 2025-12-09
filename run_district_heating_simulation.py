@@ -11,8 +11,14 @@ from config import (
     POWER_PROFILE_CONFIG,
     MIN_RETURN_TEMP,
     PIPE_GENERATION,
-    RL_TRAINING,   # <-- importer le dt RL
+    RL_TRAINING,
 )
+import os  # ajout pour gérer le chemin absolu des plots
+
+# Dossier pour stocker tous les plots (chemin absolu basé sur ce fichier)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PLOTS_DIR = os.path.join(BASE_DIR, "plots")
+os.makedirs(PLOTS_DIR, exist_ok=True)
 
 def run_simulation():
     edges = EDGES
@@ -143,6 +149,11 @@ def run_simulation():
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
+
+    # Sauvegarde dans le dossier 'plots' (chemin absolu)
+    plot_path = os.path.join(PLOTS_DIR, "power_balance_consumers.png")
+    plt.savefig(plot_path, dpi=150)
+    print(f"Figure sauvegardée dans {plot_path}")
     plt.show()
     # plt.savefig("power_balance_consumers.png", dpi=150)
 

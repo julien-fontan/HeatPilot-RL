@@ -8,6 +8,8 @@ from config import EDGES  # éventuellement inutile mais conservé si tu veux af
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(BASE_DIR, "models")
+PLOTS_DIR = os.path.join(BASE_DIR, "plots")
+os.makedirs(PLOTS_DIR, exist_ok=True)
 
 def _find_latest_model(models_dir: str) -> str | None:
     """
@@ -43,7 +45,6 @@ def _resolve_model_path(model_name: str | None) -> str | None:
         else:
             print(f"Modèle '{model_name}.zip' introuvable dans {MODELS_DIR}")
             return None
-
     # Pas de nom fourni → on prend le dernier modèle
     latest = _find_latest_model(MODELS_DIR)
     if latest is not None:
@@ -136,7 +137,7 @@ def evaluate_and_plot(model_path: str | None = None):
     plt.grid(True)
 
     plt.tight_layout()
-    output_file = "evaluation_results.png"
+    output_file = os.path.join(PLOTS_DIR, "evaluation_results.png")
     plt.savefig(output_file)
     print(f"Graphiques sauvegardés dans {output_file}")
     plt.show()
@@ -154,7 +155,7 @@ def evaluate_and_plot(model_path: str | None = None):
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
-    output_file2 = "evaluation_powers.png"
+    output_file2 = os.path.join(PLOTS_DIR, "evaluation_powers.png")
     plt.savefig(output_file2)
     print(f"Courbes de puissance sauvegardées dans {output_file2}")
     plt.show()
