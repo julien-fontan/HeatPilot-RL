@@ -54,11 +54,16 @@ Cette section explique **les choix numériques du modèle** et montre qu’ils s
 Le réseau simulé représente un **petit réseau de chaleur** d’ordre de grandeur :
 
 - **Puissance installée** : ~2 MW thermiques.
-- **Nombre de sous-stations** : typiquement 3 à 8 nœuds consommateurs. Dans `config.py`, le graphe `EDGES` décrit 1 source et plusieurs nœuds consommateurs raccordés.
+- **Nombre de sous-stations** : typiquement 3 à 8 nœuds consommateurs.
 
-Ce choix est cohérent avec les données suivantes (voir le document d’annexe sur les réseaux de chaleur) :
-- En France, ~1 000 réseaux de chaleur totalisent ~23,8 GW, soit ~24 MW de puissance moyenne par réseau. Un réseau “type” de 2 MW est donc représentatif d’un **petit réseau municipal ou de quartier**.
-- Les chaufferies biomasse ou gaz de cette taille (0,5–3 MW) sont fréquentes dans les petites communes et quartiers résidentiels.
+Ce choix est cohérent avec la typologie des réseaux en France :
+- Les **petites chaufferies collectives** (quartiers résidentiels, petites communes) se situent généralement dans la gamme **0,5 à 3 MW**.
+- À titre de comparaison réelle :
+  - La chaudière biomasse de **Montigny-lès-Metz** fait **3,5 MW** [^1].
+  - Le réseau d'**Hazebrouck** dispose d'une chaudière biomasse de **5 MW** [^2].
+  - Les chaudières industrielles (ex: gamme Bosch Unimat ou Viessmann) couvrent couramment cette plage [^3].
+
+Un réseau de 2 MW est donc représentatif d'une installation locale, bien loin des réseaux métropolitains comme la CPCU Paris (> 3 GW) ou ceux de La Défense (180 MW) [^4].
 
 ### 2.2. Températures aller / retour
 
@@ -66,15 +71,10 @@ Dans `config.py`, on utilise typiquement :
 - Température de départ cible : **60–110 °C** (`CONTROL_LIMITS["temp_min"/"temp_max"]`),
 - Température minimale de retour : **MIN_RETURN_TEMP = 40 °C**.
 
-Ces valeurs sont basées sur :
-- Les régimes classiques des réseaux eau chaude : **70–110 °C** en départ, **40–70 °C** en retour, avec ΔT = 20–40 K.
-- Les exigences sanitaires (ECS à ≥ 60 °C côté secondaire) et les recommandations de réseaux basse température (70/40 °C, 80/50 °C, etc.).
-
-**Justification :**
-- 40 °C en retour est un compromis :
-  - suffisamment chaud pour rester réaliste par rapport aux retours de sous-stations (radiateurs ~40 °C),
-  - suffisamment froid pour laisser un ΔT significatif (20–40 K) et donc un débit raisonnable.
-- Le contrôle permet de monter la température jusqu’à 110 °C pour représenter les situations de pointe (hiver rigoureux ou sur-dimensionnement volontaire de la consigne).
+Ces valeurs respectent les standards actuels :
+- Les réseaux classiques fonctionnent souvent en **90/70°C** ou **80/60°C**.
+- Les réseaux basse température visent **70/40°C**.
+- Le différentiel $\Delta T$ typique est de **20 à 50 K** [^5].
 
 ### 2.3. Débits et puissance de pompage
 
@@ -90,60 +90,30 @@ $$
        \approx 16\ \text{kg/s}
 $$
 
-Ce débit (16 kg/s) est **à l’intérieur de la plage 1–30 kg/s**, ce qui laisse de la marge pour :
+Ce débit (16 kg/s, soit environ **57 m³/h**) est cohérent pour cette puissance.
 
-- réduire le débit (optimisation de pompage),
-- augmenter le débit en cas de ΔT plus faible (exploitation dégradée).
+Dans le modèle, la puissance de pompage est approximée par :
+$$ P_{\text{pompe}}(t) = 1000 \cdot \dot m(t) $$
 
-Dans le modèle, la puissance de pompage est donnée par :
-
-$$
-P_{\text{pompe}}(t) = 1000 \cdot \dot m(t)
-$$
-
-**Hypothèse implicite :**
-- On suppose une **hauteur manométrique et un rendement global constants**, tels que :
-
-$$
-P = \dot m g H / \eta \approx 1000 \cdot \dot m
-$$
-
-Par exemple, pour $\dot{m} = 16\ \text{kg/s}$, on obtient $P_{\text{pompe}} \approx 16\ \text{kW}$, ce qui correspond à l’ordre de grandeur attendu pour un réseau de quelques MW avec ~100–150 kPa de pertes de charge et un rendement pompe + moteur ~60 %.
-
-**On ne cherche pas ici à modéliser précisément l’hydraulique**, mais à obtenir :
-- une **pénalisation énergétique croissante avec le débit**,
-- des ordres de grandeur plausibles pour comparer coût thermique et coût de pompage.
+Cela correspond à une hypothèse de hauteur manométrique totale (HMT) d'environ **100 mètres de colonne d'eau (10 bar)** avec un rendement global de 60%, ce qui est un ordre de grandeur réaliste pour vaincre les pertes de charge d'un réseau de quelques kilomètres [^6].
 
 ### 2.4. Puissance demandée par bâtiment / nœud
 
 `POWER_PROFILE_CONFIG` définit :
 
-- `p_min = 100 kW`, `p_max = 300 kW` par nœud consommateur,
-- pas de temps de changement de demande : `step_time = 7200 s` (2 h).
+- `p_min = 100 kW`, `p_max = 300 kW` par nœud consommateur.
 
-Ordres de grandeur :
-- Un immeuble résidentiel de 2 000–5 000 m², avec 70–100 W/m² de puissance de chauffage de pointe, représente **140–500 kW**.
-- Les valeurs 100–300 kW par nœud sont donc typiques d’un immeuble ou petit groupe d’immeubles.
+Cela correspond à la demande de pointe d'immeubles collectifs moyens (environ 70-100 W/m²). Par exemple, un immeuble de 3 000 m² appelle environ 200-300 kW par grand froid.
 
-Avec 4–6 nœuds de 100–300 kW :
-- puissance appelée cumulée maximale ≈ 0,4–1,8 MW,  
-  compatible avec la puissance de production cible (~2 MW).
+### 2.5. Volumes d’eau et inertie thermique
 
-### 2.5. Volumes d’eau et inertie thermique (choix de la discrétisation)
+Le simulateur prend en compte l'inertie thermique via la discrétisation des conduites. C'est un point crucial car les chaudières industrielles ont des volumes d'eau importants qui lissent les variations.
 
-Les chaudières et réseaux réels présentent des volumes d’eau importants (plusieurs milliers de litres), voir le document sur les volumes internes :
+D'après les données constructeurs (ex: Hargassner, Viessmann) :
+- **Chaudières biomasse** : Ratio volume/puissance de **2 à 5 litres/kW** [^7]. Une chaudière de 2 MW contient donc entre **4 000 et 10 000 litres d'eau**.
+- **Chaudières tubes de fumées** : Ratio de **3 à 8 litres/kW** [^8].
 
-- Chaudières biomasse 250–2500 kW : ratio typique 2–5 L/kW → une chaudière de 2 MW contient 4 000–10 000 L d’eau.
-- La boucle réseau (canalisations) ajoute des centaines de m³.
-
-Dans le modèle :
-
-- Chaque tuyau est discrétisé en **20 à 60 segments** (`PIPE_GENERATION`), avec un pas spatial `dx = 0.01 m`.
-- On ne cherche pas à reproduire le *volume absolu* du réseau réel, mais à obtenir :
-  - un **temps de transport** non négligeable,
-  - une **inertie thermique distribuée** suffisante pour que les actions de l’agent aient un effet différé et non instantané.
-
-Ce choix permet de tester les capacités d’anticipation de l’agent RL sans alourdir le modèle au point de rendre l’intégration ODE trop coûteuse.
+Le modèle numérique (`Pipe` class) reproduit cet effet de retard et de mélange, empêchant l'agent RL de modifier instantanément la température aux nœuds consommateurs.
 
 ---
 
@@ -256,8 +226,8 @@ $$
 avec $T_{\text{min return}} =$ `MIN_RETURN_TEMP` (40 °C), bornant la température de retour.
 
 **Justification de $T_{\text{min return}}$ :**
-- Physiquement, on ne peut pas extraire une puissance infinie : la température de retour ne peut pas descendre en dessous de la température ambiante du bâtiment / des retours des émetteurs.
-- Cela évite des débits nuls accompagnés de chutes de température irréalistes, et donne une puissance maximale soutirable $P_{\max} = \dot{m}_{in} c_p (T_{in} - T_{\text{min return}})$.
+- Physiquement, le transfert thermique s'arrête quand la température primaire atteint celle du retour secondaire.
+- Dans une sous-station réelle, les deux circuits (primaire réseau et secondaire bâtiment) ne se mélangent pas. L'échangeur à plaques transfère la chaleur. La température de retour primaire dépend de la performance de l'échangeur et de la demande [^9].
 
 ---
 
@@ -268,13 +238,7 @@ Le fichier `district_heating_gym_env.py` fait le lien entre la physique et l'IA.
 ### 4.1. Agent et horizon temporel
 
 - Un épisode représente **une journée** : `t_max_day = 24h`.
-- Pas de contrôle : `dt = 0.1 s` dans la config actuelle (à adapter selon la granularité souhaitée).  
-  Cela permet d’approcher des contraintes thermiques “en 10 secondes” discutées dans le document sur les chaudières (gradients max par 10s de l’ordre de 0,5–2,5 °C pour l’eau chaude).
-
-L’agent contrôle à chaque pas :
-- la température de départ,
-- le débit massique,
-- la répartition des débits aux nœuds de branchement.
+- Pas de contrôle : `dt = 10 s` (dans la config par défaut).
 
 ### 4.2. Espace d’Observation (ce que l’agent voit)
 
@@ -294,25 +258,20 @@ Ces informations suffisent pour :
 
 L’action est un vecteur continu :
 
-1. **Target Temperature** : consigne de température à la source, dans `[temp_min, temp_max] = [60, 110] °C`.
-2. **Target Flow** : débit massique cible, dans `[flow_min, flow_max] = [1, 30] kg/s`.
-3. **Splits** : pour chaque nœud de branchement, un scalaire `0–1` représentant la fraction de débit allouée au premier enfant (le reste allant au second).
+1. **Target Temperature** : consigne de température à la source.
+2. **Target Flow** : débit massique cible.
+3. **Splits** : répartition des débits.
 
-**Ramping / contraintes dynamiques :**
+**Ramping / contraintes dynamiques (Gradient de température) :**
 
-Pour coller aux limites de gradients de température et de débit réelles :
+Pour garantir le réalisme physique et protéger le matériel simulé, des contraintes de variation (ramping) sont imposées. Elles sont basées sur les limites techniques des chaudières industrielles :
 
-- **Température** :
-  - Montée maximale par pas : `max_temp_rise_per_dt = 0.5 °C`  
-    → sur 10 s, cela donne un gradient de l’ordre de 0,5–2,5 °C selon `dt`, compatible avec les gradients permis pour des chaudières eau chaude (5–15 K/min).
-  - Descente plus rapide autorisée : `max_temp_drop_per_dt = 5 °C` (simule l’ouverture de mélange / baisse de consigne).
+- **Montée en température** : Limitée à environ **+0,5 à +1,5 °C par 10 secondes**.
+  - *Source* : Les chaudières eau chaude tolèrent des gradients de 3 à 8 K/min (biomasse) voire 10-15 K/min (gaz rapide), soit environ +0,5 à +2,5 °C/10s [^10].
+- **Descente en température** : Limitée à environ **-0,2 à -0,8 °C par 10 secondes**.
+  - *Justification* : Le refroidissement est plus lent (inertie thermique, pas de refroidissement actif par le brûleur). Une chute brutale (choc thermique à l'eau froide) est dangereuse pour le corps de chauffe [^11].
 
-- **Débit** :
-  - Variation max : `max_flow_delta_per_dt = 1 kg/s par pas`.
-
-Ces bornes sont choisies pour :
-- Empêcher l’agent de générer des variations irréalistes (chocs thermiques ou hydrauliques),
-- Rester dans les ordres de grandeur observés (voir la section sur “Variation maximale de température en 10 s”).
+Ces bornes (`max_temp_rise_per_dt`, `max_temp_drop_per_dt`) empêchent l'agent d'adopter des stratégies "bang-bang" irréalistes qui endommageraient une vraie chaufferie.
 
 ### 4.4. Fonction de Coût / Récompense
 
@@ -567,12 +526,21 @@ Pistes d’analyse supplémentaires (à implémenter plus tard) :
 
 ---
 
-## 10. Références et Ressources
+## 10. Références et Sources
 
-- Documentation sur les réseaux de chaleur : [lien vers le document d’annexe]
-- Stable Baselines3 (pour l'entraînement RL) : [lien vers la documentation]
-- Gymnasium (pour l'interface RL) : [lien vers la documentation]
-- TikZ (pour les schémas) : [lien vers la documentation]
+Les données techniques utilisées pour le dimensionnement proviennent de la littérature spécialisée sur les réseaux de chaleur :
+
+[^1]: UEM Metz, [Biomasse Montigny-lès-Metz](https://www.uem-metz.fr/accueil-chauffage-urbain/biomasse-montigny/)
+[^2]: Bioénergie Promotion, [Réseau de chaleur d'Hazebrouck](https://www.bioenergie-promotion.fr/96923/le-reseau-de-chaleur-dhazebrouck-maitrise-son-prix-de-lenergie-grace-a-la-biomasse/)
+[^3]: Bosch Industrial, [Chaudières industrielles](https://www.bosch-industrial.com/fr/fr/ocs/tertiaire-et-industrie/chaudieres-industrielles-669462-c/)
+[^4]: France Chaleur Urbaine, [Données CPCU](https://france-chaleur-urbaine.beta.gouv.fr/reseaux/7501C)
+[^5]: CIBE, [Optimisation des réseaux de chaleur](https://cibe.fr/wp-content/uploads/2017/02/51-rct34_optimisationrc.pdf)
+[^6]: Xpair, [Solution pompage réseau de chaleur](https://conseils.xpair.com/consulter_savoir_faire/reseaux-chaleur-froid/solution-pompage.htm)
+[^7]: Hargassner, [Brochure chaudière industrie](https://www.hargassner.com/wp-content/uploads/2023/10/brochure-chaudiere-industry-hargassner-1.pdf)
+[^8]: Babcock Wanson, [Chaudières tubes de fumées](https://www.babcock-wanson.com/fr/categorie-produit/chaudieres-tubes-de-fumees/)
+[^9]: Xpair, [Sous-stations réseaux chaleur](https://conseils.xpair.com/consulter_savoir_faire/chauffage-urbain-reseaux-chaleur-multi-energies/sous-stations-reseaux-chaleur.htm)
+[^10]: Weishaupt, [Notice technique brûleurs](https://www.weishaupt.fr/uploads/tx_weishaupt_documents/documents/83314504.pdf)
+[^11]: National Board, [Preventing Thermal Shock](https://www.nationalboard.org/index.aspx?pageID=164&ID=232)
 
 ---
 

@@ -26,10 +26,15 @@ PHYSICAL_PROPS = dict(
 MIN_RETURN_TEMP = 40.0      # °C
 
 # --- Poids de la fonction de récompense (pénalités RL) ---
+# VecNormalize s'occupera de l'échelle globale, ici on définit l'importance relative.
+# Le mismatch (confort) doit dominer les coûts énergétiques.
 REWARD_WEIGHTS = dict(
-    mismatch=1.0e-3,   # pénalité sur |P_supplied - P_demand|
-    boiler=1.0e-6,     # pénalité sur la puissance chaudière
-    pump=5.0e-4,       # pénalité sur la puissance de pompage
+    # mismatch=5.0e-5,   # Priorité absolue
+    # boiler=1.0e-9,     # Coût secondaire
+    # pump=1.0e-7,       # Coût secondaire
+    mismatch=1.0e-4,    # Priorité absolue
+    boiler=1.0e-5,      # Coût secondaire
+    pump=1.0e-2,        # Coût secondaire
 )
 
 # --- Paramètres de discrétisation / simulation "physique" ---
@@ -81,7 +86,7 @@ _ramp_flow_kgps_per_min = 3.    # variation débit ≈ 3 kg/s par minute
 
 CONTROL_LIMITS = dict(
     temp_min=50.0,
-    temp_max=110.0,
+    temp_max=120.0,
     flow_min=3.0,
     flow_max=30.0,
     max_temp_rise_per_dt=_ramp_up_K_per_min * dt_rl / 60.0,
@@ -91,15 +96,16 @@ CONTROL_LIMITS = dict(
 
 # --- Paramètres d'entraînement RL ---
 _episode_length_steps = int(SIMULATION_PARAMS["t_max_day"] / dt_rl)
-_total_episodes = 100
+_total_episodes = 200 # On augmente un peu le budget total
 _total_timesteps = _episode_length_steps * _total_episodes
-_n_steps_update = int((5 * 60) / dt_rl)    # nb de pas entre 2 mises à jour PPO (10 min)
+_n_steps_update = 2048
 RL_TRAINING = dict(
     dt=dt_rl,                            # pas de contrôle explicite RL
     total_timesteps=_total_timesteps,
     episode_length_steps=_episode_length_steps,
     n_steps_update=_n_steps_update,
     learning_rate=3e-4,
-    save_freq_episodes=10,
+    save_freq_episodes=5,      # Sauvegarde moins fréquente en nombre d'épisodes car n_steps est grand
     use_s3_checkpoints=False,  # False = uniquement local, True = local + S3
+    normalize_env=False,        # True = VecNormalize (recommandé), False = DummyVecEnv brut
 )

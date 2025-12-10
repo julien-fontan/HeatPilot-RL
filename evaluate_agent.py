@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from glob import glob
 from stable_baselines3 import PPO
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from district_heating_gym_env import HeatNetworkEnv
 from config import EDGES  # éventuellement inutile mais conservé si tu veux afficher les ids de noeuds
 
@@ -13,29 +13,29 @@ os.makedirs(PLOTS_DIR, exist_ok=True)
 
 def _find_latest_model(models_dir: str) -> str | None:
     """
-    Retourne le chemin (sans .zip) du modèle PPO_step_* avec le plus grand nombre de timesteps.
+    Retourne le chemin (sans .zip) du modèle PPO_iter_* avec le plus grand nombre d'itérations.
     """
     if not os.path.isdir(models_dir):
         return None
     candidates = []
     for fname in os.listdir(models_dir):
-        if fname.startswith("PPO_step_") and fname.endswith(".zip"):
+        if fname.startswith("PPO_iter_") and fname.endswith(".zip"):
             try:
-                step = int(fname[len("PPO_step_"):-4])
-                candidates.append((step, fname))
+                iteration = int(fname[len("PPO_iter_"):-4])
+                candidates.append((iteration, fname))
             except ValueError:
                 continue
     if not candidates:
         return None
-    best_step, best_fname = max(candidates, key=lambda x: x[0])
+    best_iter, best_fname = max(candidates, key=lambda x: x[0])
     return os.path.join(models_dir, best_fname[:-4])
 
 def _resolve_model_path(model_name: str | None) -> str | None:
     """
     Stratégie:
       - Si model_name est fourni, on suppose qu'il s'agit du nom d'un modèle situé dans MODELS_DIR
-        (ex: 'PPO_step_864000') et on cherche MODELS_DIR/model_name.zip.
-      - Si model_name est None, on prend le PPO_step_* de plus grand timestep dans MODELS_DIR.
+        (ex: 'PPO_iter_100') et on cherche MODELS_DIR/model_name.zip.
+      - Si model_name est None, on prend le PPO_iter_* de plus grand index dans MODELS_DIR.
     Retourne le chemin SANS extension .zip ou None si rien trouvé.
     """
     if model_name:
@@ -60,18 +60,37 @@ def evaluate_and_plot(model_path: str | None = None):
     """
     resolved = _resolve_model_path(model_path)
     if resolved is None:
-        print("Erreur: aucun modèle PPO_step_*.zip trouvé dans ./models.")
+        print("Erreur: aucun modèle PPO_iter_*.zip trouvé dans ./models.")
         return
 
     if model_path is None or os.path.basename(resolved) != model_path:
         print(f"Chemin modèle résolu: {os.path.basename(resolved)}.zip")
 
     # 1. Charger l'environnement et le modèle
+    # Il faut recréer l'environnement exactement comme à l'entraînement (VecNormalize)
     env = HeatNetworkEnv()
+    env = DummyVecEnv([lambda: env])
+    
+    # Chercher le fichier de stats correspondant
+    # resolved est le chemin sans extension, ex: .../PPO_iter_10
+    iter_str = os.path.basename(resolved).split("_")[-1]
+    norm_path = os.path.join(MODELS_DIR, f"vec_normalize_iter_{iter_str}.pkl")
+    
+    if os.path.exists(norm_path):
+        print(f"Chargement des statistiques de normalisation: {os.path.basename(norm_path)}")
+        env = VecNormalize.load(norm_path, env)
+        # IMPORTANT: En évaluation, on ne met pas à jour les stats (training=False)
+        # et on ne normalise pas la reward (norm_reward=False) pour lire la vraie reward physique
+        env.training = False
+        env.norm_reward = False
+    else:
+        print("INFO: Pas de fichier vec_normalize_*.pkl trouvé. Utilisation de l'environnement brut (sans normalisation).")
+        # On ne wrap PAS dans VecNormalize ici, on suppose que le modèle a été entraîné sans.
+
     model = PPO.load(resolved)
 
     # 2. Exécuter une simulation complète
-    obs, _ = env.reset()
+    obs = env.reset() # VecEnv retourne directement l'obs
     done = False
     
     history = {
@@ -85,22 +104,53 @@ def evaluate_and_plot(model_path: str | None = None):
     }
 
     print("Début de l'évaluation...")
-    while not done:
+    # Attention: avec VecEnv, done est un tableau de booléens
+    while True:
         # Prédiction déterministe (pas d'exploration aléatoire)
         action, _ = model.predict(obs, deterministic=True)
-        obs, reward, terminated, truncated, _ = env.step(action)
-        done = terminated or truncated
+        obs, reward, done_array, _infos = env.step(action)
         
-        n_consumers = len(env.consumer_nodes)
+        # VecEnv reset automatiquement quand done=True. 
+        # Pour l'évaluation d'un seul épisode, on check done_array[0]
+        # Mais on veut récupérer les infos avant le reset automatique (stockées dans _infos[0]['terminal_observation'] si besoin)
+        # Ici HeatNetworkEnv ne renvoie pas d'info critique dans info, on utilise l'env interne pour les logs
         
-        history["time"].append(env.current_t)
-        history["T_inlet"].append(env.actual_inlet_temp)
-        history["mass_flow"].append(env.actual_mass_flow)
-        history["rewards"].append(reward)
-        history["consumer_temps"].append(obs[:n_consumers])
-        # puissances totales au pas courant (issues de HeatNetworkEnv.step)
-        history["p_demand_tot"].append(env.last_total_p_demand)
-        history["p_supplied_tot"].append(env.last_total_p_supplied)
+        # Accès à l'environnement interne (unwrapped) pour lire les vraies valeurs physiques
+        real_env = env.envs[0].unwrapped
+        
+        n_consumers = len(real_env.consumer_nodes)
+        
+        history["time"].append(real_env.current_t)
+        history["T_inlet"].append(real_env.actual_inlet_temp)
+        history["mass_flow"].append(real_env.actual_mass_flow)
+        history["rewards"].append(reward[0]) # reward est un array
+        
+        # obs est normalisé, donc difficile à lire directement. 
+        # On préfère lire l'état interne ou dénormaliser si besoin.
+        # Ici on lit real_env.state pour les températures consommateurs
+        # Attention: real_env.state contient TOUTES les cellules. Il faut extraire les noeuds.
+        # Plus simple : utiliser real_env._get_obs() mais il renvoie aussi du normalisé/clippé partiel.
+        # On va reconstruire les températures consommateurs depuis real_env
+        
+        cons_temps = []
+        parents_map = real_env.graph.get_parent_nodes()
+        for node_id in real_env.consumer_nodes:
+            parents = parents_map.get(node_id, [])
+            if parents:
+                parent_node = parents[0]
+                edge_data = real_env.graph.edges[(parent_node, node_id)]
+                pipe_idx = edge_data["pipe_index"]
+                sl = real_env.network.pipe_slices[pipe_idx]
+                cons_temps.append(real_env.state[sl.stop - 1])
+            else:
+                cons_temps.append(20.0)
+        history["consumer_temps"].append(cons_temps)
+
+        history["p_demand_tot"].append(real_env.last_total_p_demand)
+        history["p_supplied_tot"].append(real_env.last_total_p_supplied)
+
+        if done_array[0]:
+            break
 
     print(history["T_inlet"])
     print(history["mass_flow"])
@@ -114,7 +164,10 @@ def evaluate_and_plot(model_path: str | None = None):
     plt.subplot(3, 1, 1)
     plt.plot(time_axis, history["T_inlet"], 'k--', label="T Inlet (Source)", linewidth=2)
     cons_temps = np.array(history["consumer_temps"])
-    for i, node_id in enumerate(env.consumer_nodes):
+    
+    # Correction: accès à consumer_nodes via get_attr car env est un VecEnv
+    consumer_nodes = env.get_attr("consumer_nodes")[0]
+    for i, node_id in enumerate(consumer_nodes):
         plt.plot(time_axis, cons_temps[:, i], label=f"Node {node_id}")
     plt.ylabel("Température (°C)")
     plt.legend(loc='upper right', fontsize='small', ncol=2)

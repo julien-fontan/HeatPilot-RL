@@ -26,12 +26,10 @@ class HeatNetworkEnv(gym.Env):
         super(HeatNetworkEnv, self).__init__()
 
         # --- Paramètres de Simulation ---
-        self.dt = RL_TRAINING["dt"]                 # Pas de temps de contrôle (s), côté RL
-        self.t_max = SIMULATION_PARAMS["t_max_day"] # Une journée
+        self.dt = RL_TRAINING["dt"]                             # Pas de temps de contrôle (s), côté RL
+        self.t_max = SIMULATION_PARAMS["t_max_day"]             # Une journée
         self.dx = SIMULATION_PARAMS["dx"]
-        # Limite dure sur le nombre de pas par épisode
-        # Ancien code: self.max_steps = int(2 * 3600 / self.dt)  # ~2 h max
-        self.max_steps = RL_TRAINING["episode_length_steps"]    # horizon complet = t_max_day / dt
+        self.max_steps = RL_TRAINING["episode_length_steps"]    # Horizon complet = t_max_day / dt
 
         self.props = PHYSICAL_PROPS
 
@@ -51,7 +49,6 @@ class HeatNetworkEnv(gym.Env):
         
         self.graph = Graph(self.edges)
         
-        # Adaptation à la nouvelle API Graph
         all_children = self.graph.get_child_nodes()
         self.branching_nodes = self.graph.get_branching_nodes()
         self.branching_map = {n: all_children[n] for n in self.branching_nodes}
@@ -61,11 +58,13 @@ class HeatNetworkEnv(gym.Env):
 
         # --- Espaces d'Action et d'Observation ---
         # Action: [T_inlet_target, Mass_flow_target, Split_1, Split_2, ..., Split_N]
-        # Les splits sont des float entre 0..1 représentant la fraction vers le 1er enfant.
+        # On normalise l'espace d'action entre [-1, 1] pour aider le réseau de neurones.
+        # La conversion vers les unités physiques se fait dans step().
         n_actions = 2 + len(self.branching_nodes)
         self.action_space = spaces.Box(
-            low=np.array([self.temp_min, self.flow_min] + [0.0]*len(self.branching_nodes), dtype=np.float32),
-            high=np.array([self.temp_max, self.flow_max] + [1.0]*len(self.branching_nodes), dtype=np.float32),
+            low=-1.0,
+            high=1.0,
+            shape=(n_actions,),
             dtype=np.float32
         )
 
@@ -73,9 +72,20 @@ class HeatNetworkEnv(gym.Env):
         # - Température actuelle aux noeuds consommateurs (len(consumer_nodes))
         # - Température actuelle à l'entrée (1)
         # - Débit actuel (1)
-        # - Demande de puissance actuelle pour chaque consommateur (len(consumer_nodes))
+        # - Demande de puissance actuelle pour chaque consommateur (len(consumer_nodes)) [EN kW]
         n_obs = len(self.consumer_nodes) + 1 + 1 + len(self.consumer_nodes)
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(n_obs,), dtype=np.float32)
+        
+        # Définition des bornes pour l'observation (normalisation implicite utile pour le réseau)
+        # Temps: [0, 150], Flow: [0, 50], Power(kW): [0, 500]
+        low_obs = np.array(
+            [0.0]*len(self.consumer_nodes) + [0.0, 0.0] + [0.0]*len(self.consumer_nodes),
+            dtype=np.float32
+        )
+        high_obs = np.array(
+            [150.0]*len(self.consumer_nodes) + [150.0, 50.0] + [1000.0]*len(self.consumer_nodes),
+            dtype=np.float32
+        )
+        self.observation_space = spaces.Box(low=low_obs, high=high_obs, dtype=np.float32)
 
         self.network = None
         self.state = None
@@ -176,10 +186,21 @@ class HeatNetworkEnv(gym.Env):
         return self._get_obs(), {}
 
     def step(self, action):
-        # Déballe l'action
-        target_temp = float(action[0])
-        target_flow = float(action[1])
-        split_actions = action[2:]
+        # Déballe l'action (dans [-1, 1])
+        # On rescale vers les unités physiques
+        
+        # 1. Température: [-1, 1] -> [temp_min, temp_max]
+        # action[0] = -1 => temp_min, action[0] = 1 => temp_max, action[0] = 0 => milieu
+        raw_temp = np.clip(action[0], -1.0, 1.0)
+        target_temp = self.temp_min + 0.5 * (raw_temp + 1.0) * (self.temp_max - self.temp_min)
+
+        # 2. Débit: [-1, 1] -> [flow_min, flow_max]
+        raw_flow = np.clip(action[1], -1.0, 1.0)
+        target_flow = self.flow_min + 0.5 * (raw_flow + 1.0) * (self.flow_max - self.flow_min)
+
+        # 3. Splits: [-1, 1] -> [0, 1]
+        split_actions_raw = action[2:]
+        split_actions = 0.5 * (split_actions_raw + 1.0)
 
         # --- Application des contraintes (rampes de températures) ---
         
@@ -286,8 +307,7 @@ class HeatNetworkEnv(gym.Env):
         p_source = self.actual_mass_flow * cp * (self.actual_inlet_temp - MIN_RETURN_TEMP)
         p_pump = 1000.0 * self.actual_mass_flow  # pas de modèle hydraulique, on prend un deltaP fixé arbitraire
 
-        # Nouvelle fonction de récompense :
-        # mismatch (confort) >> coûts énergétiques
+        # Ronction de récompense :mismatch (confort) > coûts énergétiques
         w = REWARD_WEIGHTS
         reward = - (
             w["mismatch"] * total_mismatch
@@ -327,6 +347,8 @@ class HeatNetworkEnv(gym.Env):
             else:
                 temps.append(20.0) # Défaut
 
+        # Simplification : On passe les demandes brutes (Watts). 
+        # VecNormalize (dans train_agent) se chargera de les normaliser statistiquement.
         demands = [self.demand_funcs[n](self.current_t) for n in self.consumer_nodes]
         
         obs = np.array(
@@ -335,7 +357,8 @@ class HeatNetworkEnv(gym.Env):
             demands, 
             dtype=np.float32
         )
-        return obs
+        # Clipping de sécurité pour rester dans l'espace d'observation
+        return np.clip(obs, self.observation_space.low, self.observation_space.high)
 
     def render(self):
         print(

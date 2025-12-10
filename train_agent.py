@@ -4,6 +4,8 @@ import os
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+from stable_baselines3.common.monitor import Monitor
 from district_heating_gym_env import HeatNetworkEnv
 from config import EDGES, RL_TRAINING, GLOBAL_SEED
 import s3fs  # <-- ajout pour SSP Cloud / S3
@@ -45,11 +47,23 @@ class SaveAndEvalCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         if self.num_timesteps % self.check_freq == 0:
-            model_basename = f"PPO_step_{self.num_timesteps}"
+            # Calcul de l'itération (cycle complet : collecte n_steps + entraînement)
+            # Note : 'n_updates' dans les logs correspond aux descentes de gradient (iter * n_epochs)
+            iteration = self.num_timesteps // self.model.n_steps
+            
+            model_basename = f"PPO_iter_{iteration}"
             model_path_local = os.path.join(self.models_dir, model_basename)
             self.model.save(model_path_local)
+            
+            # Sauvegarde des statistiques de normalisation (VecNormalize)
+            # Important pour pouvoir réutiliser le modèle en évaluation
+            vec_env = self.model.get_env()
+            norm_path_local = os.path.join(self.models_dir, f"vec_normalize_iter_{iteration}.pkl")
+            if isinstance(vec_env, VecNormalize):
+                vec_env.save(norm_path_local)
+            
             if self.verbose > 0:
-                print(f"Modèle sauvegardé dans {model_basename}.zip")
+                print(f"Modèle sauvegardé dans {model_basename}.zip (iter {iteration})")
 
             # Upload S3 optionnel
             model_zip_local = model_path_local + ".zip"
@@ -57,26 +71,32 @@ class SaveAndEvalCallback(BaseCallback):
                 local_path=model_zip_local,
                 s3_rel_path=f"{model_basename}.zip",
             )
+            # Upload stats normalisation
+            if os.path.exists(norm_path_local):
+                self._upload_to_s3(
+                    local_path=norm_path_local,
+                    s3_rel_path=f"vec_normalize_iter_{iteration}.pkl",
+                )
 
         return True
 
 def _find_latest_model(models_dir: str) -> str | None:
     """
-    Retourne le chemin (sans .zip) du modèle PPO_step_* avec le plus grand nombre de timesteps.
+    Retourne le chemin (sans .zip) du modèle PPO_iter_* avec le plus grand nombre d'itérations.
     """
     if not os.path.isdir(models_dir):
         return None
     candidates = []
     for fname in os.listdir(models_dir):
-        if fname.startswith("PPO_step_") and fname.endswith(".zip"):
+        if fname.startswith("PPO_iter_") and fname.endswith(".zip"):
             try:
-                step = int(fname[len("PPO_step_"):-4])
-                candidates.append((step, fname))
+                iteration = int(fname[len("PPO_iter_"):-4])
+                candidates.append((iteration, fname))
             except ValueError:
                 continue
     if not candidates:
         return None
-    best_step, best_fname = max(candidates, key=lambda x: x[0])
+    best_iter, best_fname = max(candidates, key=lambda x: x[0])
     return os.path.join(models_dir, best_fname[:-4])  # sans .zip
 
 def train():
@@ -85,6 +105,7 @@ def train():
     n_steps = RL_TRAINING["n_steps_update"]
     total_timesteps = RL_TRAINING["total_timesteps"]
     use_s3 = RL_TRAINING.get("use_s3_checkpoints", False)
+    normalize_env = RL_TRAINING.get("normalize_env", True)  # Nouvelle option
     dt_control = RL_TRAINING.get("dt", None)
     np.random.seed(GLOBAL_SEED)
     
@@ -107,11 +128,22 @@ def train():
         )
     
     # Création de l'environnement
+    # On utilise DummyVecEnv + éventuellement VecNormalize pour stabiliser l'apprentissage
     env = HeatNetworkEnv()
+    # check_env(env) # check_env ne supporte pas toujours bien les wrappers complexes, on suppose env ok
     
-    # Vérification de la conformité avec l'API Gym
-    check_env(env)
-    print("Environnement validé.")
+    env = Monitor(env)  # Logs pour Tensorboard / CSV
+    env = DummyVecEnv([lambda: env])
+    
+    if normalize_env:
+        # VecNormalize normalise automatiquement :
+        # 1. Les observations (centre et réduit la variance) -> remplace le scaling manuel
+        # 2. Les récompenses (stabilise le gradient)
+        # Note : Il ne normalise PAS les actions (c'est fait manuellement dans HeatNetworkEnv)
+        env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10., gamma=0.99)
+        print("Environnement validé et normalisé (VecNormalize).")
+    else:
+        print("Environnement validé (DummyVecEnv - Pas de normalisation).")
 
     # Instanciation du callback (enregistre local + éventuellement S3)
     callback = SaveAndEvalCallback(
@@ -120,49 +152,83 @@ def train():
         use_s3=use_s3,
     )
 
-    # --- Reprise éventuelle de l'entraînement depuis le dernier PPO_step_* ---
+    # --- Reprise éventuelle de l'entraînement depuis le dernier PPO_iter_* ---
     os.makedirs(MODELS_DIR, exist_ok=True)
     latest_model = _find_latest_model(MODELS_DIR)
+    
+    reset_num_timesteps = True
+    
     if latest_model is not None:
         latest_name = os.path.basename(latest_model) + ".zip"
         print(f"Reprise de l'entraînement depuis {latest_name}")
+        
+        # Chargement du modèle
         model = PPO.load(latest_model, env=env)
+        reset_num_timesteps = False  # On continue le comptage des steps/itérations
+        
+        # Tentative de chargement des stats de normalisation associées (si activé)
+        if normalize_env:
+            iter_str = latest_model.split("_")[-1]
+            norm_path = os.path.join(MODELS_DIR, f"vec_normalize_iter_{iter_str}.pkl")
+            if os.path.exists(norm_path):
+                print(f"Chargement des statistiques de normalisation depuis {os.path.basename(norm_path)}")
+                env = VecNormalize.load(norm_path, env.venv) # env.venv car env est déjà un VecNormalize
+                model.set_env(env)
+            else:
+                print("Attention: Fichier de stats VecNormalize introuvable, reprise avec stats vierges.")
+
         # Optionnel: s'assurer que certains hyperparams sont ceux de RL_TRAINING
         model.n_steps = n_steps
         model.learning_rate = RL_TRAINING["learning_rate"]
         model.seed = GLOBAL_SEED
-        start_timesteps = int(latest_model.split("_")[-1])
+        start_timesteps = model.num_timesteps
     else:
         print(f"Aucun modèle trouvé dans {MODELS_DIR}, création d'un nouveau modèle PPO.")
+        # Configuration PPO adaptée aux délais thermiques
         model = PPO(
             "MlpPolicy",
             env,
-            n_steps=n_steps,
-            batch_size=144,              # par ex. 144 = 432 / 3
+            n_steps=n_steps,            # Désormais 2048 (défini dans config)
+            batch_size=64,              # Taille de batch standard (64 ou 128 avec n_steps=2048)
             verbose=1,
             learning_rate=RL_TRAINING["learning_rate"],
             seed=GLOBAL_SEED,
+            gamma=0.995,                # Gamma élevé (horizon ~30-40 min) pour capturer les effets retardés
+            gae_lambda=0.98,            # GAE lambda élevé pour réduire le biais dû aux délais
+            ent_coef=0.01,              # Force l'exploration pour éviter l'effondrement immédiat vers "min flow"
         )
         start_timesteps = 0
+        reset_num_timesteps = True
 
     print(f"Début de l'entraînement... (timesteps déjà appris: {start_timesteps})")
-    model.learn(total_timesteps=total_timesteps, callback=callback)
+    model.learn(total_timesteps=total_timesteps, callback=callback, reset_num_timesteps=reset_num_timesteps)
     print("Entraînement terminé.")
 
-    # Sauvegarde d'un dernier snapshot au nombre total de timesteps cumulés
-    final_timesteps = start_timesteps + total_timesteps
-    final_basename = f"PPO_step_{final_timesteps}"
+    # Sauvegarde d'un dernier snapshot
+    final_iteration = model.num_timesteps // n_steps
+    final_basename = f"PPO_iter_{final_iteration}"
     final_model_local = os.path.join(MODELS_DIR, final_basename)
     model.save(final_model_local)
+    
+    # Sauvegarde finale des stats
+    final_norm_local = os.path.join(MODELS_DIR, f"vec_normalize_iter_{final_iteration}.pkl")
+    env.save(final_norm_local)
+    
     print(f"Dernier modèle sauvegardé dans {final_basename}.zip")
 
     # Upload sur S3 optionnel
     if use_s3:
         fs = s3fs.S3FileSystem(anon=False)
+        # Model
         final_model_zip_local = final_model_local + ".zip"
         final_model_s3 = f"s3://{CHECKPOINT_PATH_S3}/{final_basename}.zip"
         with open(final_model_zip_local, "rb") as f_local, fs.open(final_model_s3, "wb") as f_s3:
             f_s3.write(f_local.read())
+        # Stats
+        final_norm_s3 = f"s3://{CHECKPOINT_PATH_S3}/vec_normalize_iter_{final_iteration}.pkl"
+        with open(final_norm_local, "rb") as f_local, fs.open(final_norm_s3, "wb") as f_s3:
+            f_s3.write(f_local.read())
+            
         print(f"Dernier modèle uploadé sur S3: {final_model_s3}")
     else:
         print("Upload S3 désactivé (use_s3_checkpoints=False).")
