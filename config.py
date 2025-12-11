@@ -107,9 +107,9 @@ RL_TRAINING = dict(
 # Configuration alignée avec reward_plot.py
 REWARD_CONFIG = dict(
     weights=dict(
-        comfort=10.0,   # Coeff A (Quadratique)
-        boiler=14.0,    # Coeff B (Sobriété Boiler)
-        pump=3.5        # Coeff C (Sobriété Pompage)
+        comfort=1.0,    # Coeff A (Linéaire)
+        boiler=1.0,     # Coeff B (Sobriété Boiler)
+        pump=0.5        # Coeff C (Sobriété Pompage)
     ),
     params=dict(
         p_ref=2000.0,         # Puissance de référence (kW)

@@ -10,7 +10,7 @@ import config
 # --- CONFIGURATION UTILISATEUR ---
 # Nom du sous-dossier dans /models (ex: "PPO_default")
 # Ce dossier doit exister dans c:\Users\juli1\Documents Drive\Projets\Recherche\HeatPilot-RL\models
-MODEL_SUBDIR = "PPO_non_normalisé1" 
+MODEL_SUBDIR = "PPO_normalisé1" 
 # Nombre d'itérations spécifique (ex: 18000), ou None pour prendre le dernier disponible
 MODEL_ITER = None
 # ---------------------------------

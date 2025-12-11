@@ -19,18 +19,18 @@ Schéma du graphe principal utilisé dans `config.py` :
 
 ```mermaid
 graph LR
-    1((1 Source<br/>&nbsp;)) --> 2((2<br/>&nbsp;))
-    2 --> 3((3<br/>&nbsp;))
-    3 --> 4((4<br/>&nbsp;))
-    4 --> 5((5<br/>&nbsp;))
-    5 --> 6((6<br/>&nbsp;))
+    1((1<br/>Source)) --> 2((2))
+    2 --> 3((3))
+    3 --> 4((4))
+    4 --> 5((5))
+    5 --> 6((6))
 
-    3 --> 10((10<br/>&nbsp;))
-    10 --> 11((11<br/>&nbsp;))
+    3 --> 10((10))
+    10 --> 11((11))
 
-    5 --> 30((30<br/>&nbsp;))
-    30 --> 31((31<br/>&nbsp;))
-    31 --> 32((32<br/>&nbsp;))
+    5 --> 30((30))
+    30 --> 31((31))
+    31 --> 32((32))
 ```
 
 
@@ -49,12 +49,12 @@ Anticiper les demandes et piloter la température et le débit à la source pour
 
 Cette section explique **les choix numériques du modèle** et montre qu’ils sont cohérents avec les données disponibles sur de vrais réseaux de chaleur.
 
-### 2.1. Puissance du réseau “type”
+### 2.1. Puissance du réseau "type"
 
 Le réseau simulé représente un **petit réseau de chaleur** d’ordre de grandeur :
 
 - **Puissance installée** : ~2 MW thermiques.
-- **Nombre de sous-stations** : typiquement 3 à 8 nœuds consommateurs.
+- **Nombre de sous-stations** : typiquement 5 à 10 nœuds consommateurs.
 
 Ce choix est cohérent avec la typologie des réseaux en France :
 - Les **petites chaufferies collectives** (quartiers résidentiels, petites communes) se situent généralement dans la gamme **0,5 à 3 MW**.
@@ -105,50 +105,37 @@ Cela correspond à une hypothèse de hauteur manométrique totale (HMT) d'enviro
 
 Cela correspond à la demande de pointe d'immeubles collectifs moyens (environ 70-100 W/m²). Par exemple, un immeuble de 3 000 m² appelle environ 200-300 kW par grand froid.
 
-### 2.5. Volumes d’eau et inertie thermique
-
-Le simulateur prend en compte l'inertie thermique via la discrétisation des conduites. C'est un point crucial car les chaudières industrielles ont des volumes d'eau importants qui lissent les variations.
-
-D'après les données constructeurs (ex: Hargassner, Viessmann) :
-- **Chaudières biomasse** : Ratio volume/puissance de **2 à 5 litres/kW** [^7]. Une chaudière de 2 MW contient donc entre **4 000 et 10 000 litres d'eau**.
-- **Chaudières tubes de fumées** : Ratio de **3 à 8 litres/kW** [^8].
-
-Le modèle numérique (`Pipe` class) reproduit cet effet de retard et de mélange, empêchant l'agent RL de modifier instantanément la température aux nœuds consommateurs.
-
 ---
 
-## 3. Modélisation Physique (Le Simulateur)
+## 3. Modélisation physique (le simulateur)
 
-Le cœur du code se trouve dans `district_heating_model.py`. Nous utilisons une approche 1D (unidimensionnelle) basée sur la méthode des volumes finis.
+Le cœur du code se trouve dans `district_heating_model.py`. Nous utilisons une approche unidimensionnelle basée sur la méthode des volumes finis.
 
-### 3.1. Hypothèses Simplificatrices
+### 3.1. Hypothèses simplificatrices
 
 1. **Incompressibilité :**  
    L'eau est considérée incompressible. Le débit massique se propage instantanément dans tout le réseau (pas d’ondes de pression, pas de dynamique transitoire hydrauliques).
-   - Justification :  
-     Pour de l’eau liquide à faible compressibilité, les vitesses typiques (0,5–2 m/s) et les variations de pression restent modérées. À l’échelle de temps thermique (secondes à minutes) la dynamique de pression est très rapide → on peut la considérer quasi-statique.
+   - Pour de l’eau liquide à faible compressibilité, les vitesses typiques (0,5–2 m/s) et les variations de pression restent modérées. À l’échelle de temps thermique (secondes à minutes) la dynamique de pression est très rapide → on peut la considérer quasi-statique.
 
 2. **Mélange parfait aux nœuds :**  
    Aux jonctions, les flux se mélangent instantanément.
-   - Justification :  
-     Les volumes de mélange en chambre de sous-station ou collecteur sont faibles devant la longueur des canalisations, et les temps de mélange volumique sont négligeables à l’échelle de quelques secondes.
+   - Les volumes de mélange en chambre de sous-station ou collecteur sont faibles devant la longueur des canalisations, et les temps de mélange volumique sont négligeables à l’échelle de quelques secondes.
 
 3. **Isolation uniforme :**  
    Les pertes thermiques linéiques sont modélisées par un coefficient `heat_loss_coeff` constant le long de chaque tuyau, tiré aléatoirement dans un intervalle raisonnable.
-   - Justification :  
-     Dans les réseaux réels, les pertes sont de l’ordre de 5–15 % de l’énergie transportée sur une année. Un coefficient constant par conduit permet de représenter ce phénomène sans introduire une dépendance trop fine au voisinage (sol, nappe, etc.).
+   - Dans les réseaux réels, les pertes sont de l’ordre de 5–15 % de l’énergie transportée sur une année.
 
 4. **Conduction longitudinale négligée (facultative) :**  
-   Le terme diffusif peut être activé, mais est généralement nul ou très faible. Le transport par **advection** domine dans des conduites avec Re élevés.
+   Le terme diffusif peut être activé, mais est généralement nul ou très faible. Le transport par **advection** domine dans des conduites avec $Re$ élevés.
 
 5. **Pas de dynamique chaudière détaillée :**  
    La chaudière est modélisée comme un **producteur imposant une température de départ** et recevant un débit. Pas de bilans détaillés de combustion ou d’inertie du corps de chauffe.
    - Justification :  
      Pour le RL, l’essentiel est la relation entrée-sortie (T_in, ṁ → P_boiler) et les contraintes sur les rampes, plus que la transitoire interne de la chaudière.
 
-### 3.2. L'Équation de la Conduite (Pipe)
+### 3.2. L'Équation de la conduite
 
-Chaque tuyau est divisé en petits segments (cellules) de longueur $dx$. L'évolution de la température $T$ suit :
+Chaque tuyau est divisé en petits segments de longueur $dx$. L'évolution de la température $T$ suit :
 
 $$
 \frac{\partial T}{\partial t}
@@ -281,8 +268,8 @@ $$
 Reward = r_{\text{confort}} + r_{\text{sobriété\_prod}} + r_{\text{sobriété\_pompe}}
 $$
 
-1. **Confort ($r_{\text{confort}}$)** : Pénalise quadratiquement la **sous-production** uniquement (les consommateurs ont froid). La sur-production n'est pas pénalisée ici (elle l'est dans le terme de sobriété).
-   $$ r_{\text{confort}} = - A \times \left( \frac{\max(0, P_{\text{demand}} - P_{\text{supplied}})}{P_{\text{ref}}} \right)^2 $$
+1. **Confort ($r_{\text{confort}}$)** : Pénalise linéairement la **sous-production** uniquement (les consommateurs ont froid). La sur-production n'est pas pénalisée ici (elle l'est dans le terme de sobriété).
+   $$ r_{\text{confort}} = - A \times \frac{\max(0, P_{\text{demand}} - P_{\text{supplied}})}{P_{\text{ref}}} $$
 
 2. **Sobriété Production ($r_{\text{sobriété\_prod}}$)** : Pénalise linéairement la **sur-production** (gaspillage d'énergie chaudière).
    $$ r_{\text{sobriété\_prod}} = - B \times \frac{\max(0, P_{\text{boiler}} - P_{\text{demand}})}{P_{\text{ref}}} $$
@@ -291,16 +278,16 @@ $$
    $$ r_{\text{sobriété\_pompe}} = - C \times \left[ \left(\frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right)^2 + \max\left(0, \frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right) \right] $$
 
 **Poids actuels (`config.py`) :**
-- $A = 10.0$ (Confort)
-- $B = 14.0$ (Sobriété Chaudière)
-- $C = 3.5$ (Sobriété Pompe)
+- $A = 1.0$ (Confort)
+- $B = 1.0$ (Sobriété Chaudière)
+- $C = 0.5$ (Sobriété Pompe)
 - $P_{\text{ref}} = 2000$ kW
 - $P_{\text{nom}} = 15$ kW
 
 ### 4.5. Paramètres d'Apprentissage (PPO)
 
 Pour favoriser l'exploration et la convergence :
-- **Normalisation** : L'environnement est normalisé (`VecNormalize`) pour centrer et réduire les observations et les récompenses.
+- **Normalisation** : `normalize_env = False` (Désactivé dans la configuration actuelle).
 - **Entropie** : Un coefficient d'entropie (`ent_coef = 0.05`) force l'agent à explorer davantage au début.
 - **Horizon** : La mise à jour du réseau de neurones se fait tous les 2048 pas (~6h simulées) pour stabiliser le gradient.
 
