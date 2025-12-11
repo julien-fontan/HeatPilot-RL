@@ -19,18 +19,18 @@ Schéma du graphe principal utilisé dans `config.py` :
 
 ```mermaid
 graph LR
-    1((1<br/>Source)) --> 2((2))
-    2 --> 3((3))
-    3 --> 4((4))
-    4 --> 5((5))
-    5 --> 6((6))
+    1((1 Source<br/>&nbsp;)) --> 2((2<br/>&nbsp;))
+    2 --> 3((3<br/>&nbsp;))
+    3 --> 4((4<br/>&nbsp;))
+    4 --> 5((5<br/>&nbsp;))
+    5 --> 6((6<br/>&nbsp;))
 
-    3 --> 10((10))
-    10 --> 11((11))
+    3 --> 10((10<br/>&nbsp;))
+    10 --> 11((11<br/>&nbsp;))
 
-    5 --> 30((30))
-    30 --> 31((31))
-    31 --> 32((32))
+    5 --> 30((30<br/>&nbsp;))
+    30 --> 31((31<br/>&nbsp;))
+    31 --> 32((32<br/>&nbsp;))
 ```
 
 
@@ -275,43 +275,34 @@ Ces bornes (`max_temp_rise_per_dt`, `max_temp_drop_per_dt`) empêchent l'agent d
 
 ### 4.4. Fonction de Coût / Récompense
 
-La récompense est construite comme :
+La récompense est construite pour équilibrer le confort thermique et la sobriété énergétique. Elle est définie dans `config.py` (`REWARD_CONFIG`) et calculée à chaque pas de temps.
 
 $$
-Reward = - \left( w_1 \cdot \text{ÉcartConfort}
-                + w_2 \cdot P_{\text{chaudière}}
-                + w_3 \cdot P_{\text{pompe}} \right)
+Reward = r_{\text{confort}} + r_{\text{sobriété\_prod}} + r_{\text{sobriété\_pompe}}
 $$
 
-Dans le code :
+1. **Confort ($r_{\text{confort}}$)** : Pénalise quadratiquement la **sous-production** uniquement (les consommateurs ont froid). La sur-production n'est pas pénalisée ici (elle l'est dans le terme de sobriété).
+   $$ r_{\text{confort}} = - A \times \left( \frac{\max(0, P_{\text{demand}} - P_{\text{supplied}})}{P_{\text{ref}}} \right)^2 $$
 
-$$
-\text{ÉcartConfort} = \sum_i \left|P_{\text{supplied},i} - P_{\text{demand},i}\right|
-$$
+2. **Sobriété Production ($r_{\text{sobriété\_prod}}$)** : Pénalise linéairement la **sur-production** (gaspillage d'énergie chaudière).
+   $$ r_{\text{sobriété\_prod}} = - B \times \frac{\max(0, P_{\text{boiler}} - P_{\text{demand}})}{P_{\text{ref}}} $$
 
-$$
-P_{\text{chaudière}} = \dot{m} \, c_p \, \bigl(T_{\text{inlet}} - T_{\min,\text{return}}\bigr)
-$$
+3. **Sobriété Pompage ($r_{\text{sobriété\_pompe}}$)** : Pénalise l'écart à la **puissance nominale** (quadratique) et ajoute une pénalité linéaire pour tout excès au-delà du nominal. Cela incite la pompe à travailler autour de son point de fonctionnement optimal.
+   $$ r_{\text{sobriété\_pompe}} = - C \times \left[ \left(\frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right)^2 + \max\left(0, \frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right) \right] $$
 
-$$
-P_{\text{pompe}} = 1000 \cdot \dot{m}
-$$
+**Poids actuels (`config.py`) :**
+- $A = 10.0$ (Confort)
+- $B = 14.0$ (Sobriété Chaudière)
+- $C = 3.5$ (Sobriété Pompe)
+- $P_{\text{ref}} = 2000$ kW
+- $P_{\text{nom}} = 15$ kW
 
-Les poids sont actuellement :
+### 4.5. Paramètres d'Apprentissage (PPO)
 
-- `1.0e-4` pour l’écart de puissance,
-- `1.0e-5` pour la puissance chaudière,
-- `1.0e-2` pour la puissance de pompage.
-
-**Justification :**
-- L’objectif principal est de **respecter la demande** (écart-confort minimal),
-- La pénalisation de l’énergie chaudière est plus faible mais incite à **baisser la consigne** si possible,
-- La pénalisation du pompage est relativement forte par rapport à la chaudière pour encourager :
-  - l’optimisation de ΔT (retours plus froids),
-  - des débits réduits quand c’est possible.
-
-**Remarque :**
-Ces poids peuvent être ajustés pour refléter des coûts économiques ou environnementaux plus précis (prix gaz vs électricité, contenu CO₂, etc.).
+Pour favoriser l'exploration et la convergence :
+- **Normalisation** : L'environnement est normalisé (`VecNormalize`) pour centrer et réduire les observations et les récompenses.
+- **Entropie** : Un coefficient d'entropie (`ent_coef = 0.05`) force l'agent à explorer davantage au début.
+- **Horizon** : La mise à jour du réseau de neurones se fait tous les 2048 pas (~6h simulées) pour stabiliser le gradient.
 
 ---
 
@@ -321,14 +312,15 @@ Voici comment les fichiers interagissent :
 
 ```text
 .
-├── config.py                       # Paramètres globaux : topologie, physique, RL.
+├── config.py                       # Paramètres globaux : topologie, physique, RL, récompenses.
 ├── district_heating_model.py       # Moteur physique : classes Pipe et DistrictHeatingNetwork.
-├── graph_utils.py                  # Structure de graphe et topologie (tri topologique, rôles des noeuds).
+├── graph_utils.py                  # Structure de graphe et topologie.
 ├── district_heating_gym_env.py     # Environnement Gym : interface physique <-> RL.
-├── train_agent.py                  # Entraînement PPO (Stable-Baselines3) avec callbacks de sauvegarde.
+├── train_agent.py                  # Entraînement PPO avec menu interactif et gestion de config.
+├── reward_plot.py                  # Outil interactif pour visualiser et régler la fonction de récompense.
 ├── evaluate_agent.py               # Évaluation d'un agent entraîné + génération de graphiques.
-├── run_district_heating_simulation.py # Simulation déterministe "sans IA" (température/débit imposés).
-└── utils.py                        # Fonctions utilitaires (profils temporels, etc.).
+├── run_district_heating_simulation.py # Simulation déterministe "sans IA".
+└── utils.py                        # Fonctions utilitaires.
 ```
 
 ---
@@ -343,7 +335,15 @@ Assurez-vous d'avoir installé les dépendances :
 pip install numpy scipy matplotlib gymnasium stable-baselines3 s3fs
 ```
 
-### 6.2. Étape 1 : Vérifier la physique
+### 6.2. Étape 1 : Régler la Récompense (Optionnel)
+
+Utilisez l'outil interactif pour visualiser l'impact des poids $A, B, C$ sur la récompense en fonction de la puissance fournie et du débit :
+
+```bash
+python reward_plot.py
+```
+
+### 6.3. Étape 2 : Vérifier la physique
 
 Lancez une simulation simple sans IA pour voir comment le réseau réagit thermiquement :
 
@@ -368,19 +368,22 @@ Cela :
 - $P_{boiler}$,
 en fonction du temps. Il est déjà en partie généré dans `run_district_heating_simulation.py`.
 
-### 6.3. Étape 2 : Entraîner l'IA
+### 6.4. Étape 3 : Entraîner l'IA
 
-Lancez l'apprentissage. L'agent va faire des essais/erreurs pendant plusieurs épisodes :
+Lancez l'apprentissage :
 
 ```bash
 python train_agent.py
 ```
 
-- Le modèle final sera sauvegardé dans `ppo_heat_network_final.zip`.
-- Des checkpoints intermédiaires seront stockés dans `./checkpoints/`.
-- Optionnellement, les checkpoints peuvent être envoyés vers S3 si `use_s3_checkpoints=True` dans `config.py`.
+Le script propose un **menu interactif** :
+1. **Créer un nouveau modèle** : Sauvegarde la configuration actuelle (`config.py`) dans un fichier `run_config.json` associé au modèle pour garantir la reproductibilité.
+2. **Reprendre un entraînement** : Charge automatiquement la configuration `run_config.json` du modèle existant pour continuer l'entraînement avec les mêmes paramètres.
 
-### 6.4. Étape 3 : Évaluer et Visualiser
+- Le modèle final sera sauvegardé dans `models/PPO_nom_du_run/`.
+- Des checkpoints intermédiaires sont créés régulièrement.
+
+### 6.5. Étape 4 : Évaluer et Visualiser
 
 Une fois l'entraînement fini, regardez comment l'agent se comporte sur un scénario de test :
 
