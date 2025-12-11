@@ -4,19 +4,7 @@ import numpy as np
 from district_heating_model import Pipe, DistrictHeatingNetwork
 from utils import generate_smooth_profile
 from graph_utils import Graph
-from config import (
-    PHYSICAL_PROPS,
-    SIMULATION_PARAMS,
-    CONTROL_LIMITS,
-    EDGES,
-    GLOBAL_SEED,
-    INITIAL_CONDITIONS,
-    POWER_PROFILE_CONFIG,
-    MIN_RETURN_TEMP,
-    PIPE_GENERATION,
-    RL_TRAINING,
-    REWARD_WEIGHTS,
-)
+import config  # Import du module entier pour permettre le patching dynamique
 
 class HeatNetworkEnv(gym.Env):
     """
@@ -26,26 +14,26 @@ class HeatNetworkEnv(gym.Env):
         super(HeatNetworkEnv, self).__init__()
 
         # --- Paramètres de Simulation ---
-        self.dt = RL_TRAINING["dt"]                             # Pas de temps de contrôle (s), côté RL
-        self.t_max = SIMULATION_PARAMS["t_max_day"]             # Une journée
-        self.dx = SIMULATION_PARAMS["dx"]
-        self.max_steps = RL_TRAINING["episode_length_steps"]    # Horizon complet = t_max_day / dt
+        self.dt = config.RL_TRAINING["dt"]                             # Pas de temps de contrôle (s), côté RL
+        self.t_max = config.SIMULATION_PARAMS["t_max_day"]             # Une journée
+        self.dx = config.SIMULATION_PARAMS["dx"]
+        self.max_steps = config.RL_TRAINING["episode_length_steps"]    # Horizon complet = t_max_day / dt
 
-        self.props = PHYSICAL_PROPS
+        self.props = config.PHYSICAL_PROPS
 
         # --- Contraintes Physiques ---
-        self.temp_min = CONTROL_LIMITS["temp_min"]
-        self.temp_max = CONTROL_LIMITS["temp_max"]
-        self.flow_min = CONTROL_LIMITS["flow_min"]
-        self.flow_max = CONTROL_LIMITS["flow_max"]
+        self.temp_min = config.CONTROL_LIMITS["temp_min"]
+        self.temp_max = config.CONTROL_LIMITS["temp_max"]
+        self.flow_min = config.CONTROL_LIMITS["flow_min"]
+        self.flow_max = config.CONTROL_LIMITS["flow_max"]
         
         # Variation max par pas de temps
-        self.max_temp_rise = CONTROL_LIMITS["max_temp_rise_per_dt"]
-        self.max_temp_drop = CONTROL_LIMITS["max_temp_drop_per_dt"]
-        self.max_flow_var = CONTROL_LIMITS["max_flow_delta_per_dt"]
+        self.max_temp_rise = config.CONTROL_LIMITS["max_temp_rise_per_dt"]
+        self.max_temp_drop = config.CONTROL_LIMITS["max_temp_drop_per_dt"]
+        self.max_flow_var = config.CONTROL_LIMITS["max_flow_delta_per_dt"]
 
         # --- Analyse de la Topologie ---
-        self.edges = EDGES
+        self.edges = config.EDGES
         
         self.graph = Graph(self.edges)
         
@@ -58,8 +46,6 @@ class HeatNetworkEnv(gym.Env):
 
         # --- Espaces d'Action et d'Observation ---
         # Action: [T_inlet_target, Mass_flow_target, Split_1, Split_2, ..., Split_N]
-        # On normalise l'espace d'action entre [-1, 1] pour aider le réseau de neurones.
-        # La conversion vers les unités physiques se fait dans step().
         n_actions = 2 + len(self.branching_nodes)
         self.action_space = spaces.Box(
             low=-1.0,
@@ -69,14 +55,9 @@ class HeatNetworkEnv(gym.Env):
         )
 
         # Observation: 
-        # - Température actuelle aux noeuds consommateurs (len(consumer_nodes))
-        # - Température actuelle à l'entrée (1)
-        # - Débit actuel (1)
-        # - Demande de puissance actuelle pour chaque consommateur (len(consumer_nodes)) [EN kW]
         n_obs = len(self.consumer_nodes) + 1 + 1 + len(self.consumer_nodes)
         
-        # Définition des bornes pour l'observation (normalisation implicite utile pour le réseau)
-        # Temps: [0, 150], Flow: [0, 50], Power(kW): [0, 500]
+        # Définition des bornes pour l'observation
         low_obs = np.array(
             [0.0]*len(self.consumer_nodes) + [0.0, 0.0] + [0.0]*len(self.consumer_nodes),
             dtype=np.float32
@@ -92,8 +73,8 @@ class HeatNetworkEnv(gym.Env):
         self.current_t = 0.0
         self.demand_funcs = {}  # node_id -> f(t)
         
-        self.actual_inlet_temp = INITIAL_CONDITIONS["initial_temp"]
-        self.actual_mass_flow = INITIAL_CONDITIONS["initial_flow"]
+        self.actual_inlet_temp = config.INITIAL_CONDITIONS["initial_temp"]
+        self.actual_mass_flow = config.INITIAL_CONDITIONS["initial_flow"]
 
         # suivi des puissances au dernier pas
         self.last_total_p_demand = 0.0
@@ -105,25 +86,19 @@ class HeatNetworkEnv(gym.Env):
         self.step_count = 0
 
     def reset(self, seed=None, options=None):
-        """
-        Reset conforme à l'API Gymnasium:
-        - accepte seed et options,
-        - retourne (observation, info).
-        """
         # Si aucun seed n'est fourni, on utilise GLOBAL_SEED pour la reproductibilité
         if seed is None:
-            seed = GLOBAL_SEED
+            seed = config.GLOBAL_SEED
 
         super().reset(seed=seed)
 
         edges = self.edges
 
-        # 1. Génération reproductible des propriétés des conduites, y compris heat_loss_coeff
+        # 1. Génération reproductible des propriétés des conduites
         lengths, diameters, n_segments, h_vals = Pipe.generate_parameters(
             edges=edges,
             dx=self.dx,
             seed=seed,
-            # les bornes viennent de PIPE_GENERATION par défaut
         )
 
         pipes_list = []
@@ -141,46 +116,44 @@ class HeatNetworkEnv(gym.Env):
             )
             pipes_list.append(p)
 
-        # 2. Génération des profils de demande (puissance en W) pour les consommateurs
-        # step_time est un temps physique (s). smooth_factor > 1.0 rend le profil plus lisse.
-        rng = np.random.default_rng()  # profils différents à chaque reset
-        smooth_factor = POWER_PROFILE_CONFIG.get("smooth_factor", 1.0)
+        # 2. Génération des profils de demande
+        rng = np.random.default_rng()
+        smooth_factor = config.POWER_PROFILE_CONFIG.get("smooth_factor", 1.0)
         self.demand_funcs = {}
         for node in self.consumer_nodes:
             self.demand_funcs[node] = generate_smooth_profile(
                 t_end=self.t_max,
-                step_time=POWER_PROFILE_CONFIG["step_time"],
-                min_val=POWER_PROFILE_CONFIG["p_min"],
-                max_val=POWER_PROFILE_CONFIG["p_max"],
+                step_time=config.POWER_PROFILE_CONFIG["step_time"],
+                min_val=config.POWER_PROFILE_CONFIG["p_min"],
+                max_val=config.POWER_PROFILE_CONFIG["p_max"],
                 seed=rng.integers(0, 1_000_000),
                 smooth_factor=smooth_factor,
             )
 
-        # 3. Construire le réseau avec consommation activée
+        # 3. Construire le réseau
         self.network = DistrictHeatingNetwork(
             pipes=pipes_list,
-            inlet_mass_flow=INITIAL_CONDITIONS["initial_flow"],
+            inlet_mass_flow=config.INITIAL_CONDITIONS["initial_flow"],
             node_splits={},
             graph=self.graph,
-            inlet_temp=INITIAL_CONDITIONS["initial_temp"],
+            inlet_temp=config.INITIAL_CONDITIONS["initial_temp"],
             rho=self.props["rho"],
             cp=self.props["cp"],
             node_power_funcs=self.demand_funcs,
-            t_min_return=MIN_RETURN_TEMP,
+            t_min_return=config.MIN_RETURN_TEMP,
         )
 
         # 4. Initialisation état
-        self.state = np.full(self.network.total_cells, INITIAL_CONDITIONS["initial_temp"])  # °C partout
+        self.state = np.full(self.network.total_cells, config.INITIAL_CONDITIONS["initial_temp"])
         self.current_t = 0.0
-        self.actual_inlet_temp = INITIAL_CONDITIONS["initial_temp"]
-        self.actual_mass_flow = INITIAL_CONDITIONS["initial_flow"]
+        self.actual_inlet_temp = config.INITIAL_CONDITIONS["initial_temp"]
+        self.actual_mass_flow = config.INITIAL_CONDITIONS["initial_flow"]
         
         self.last_total_p_demand = 0.0
         self.last_total_p_supplied = 0.0
         self.last_p_source = 0.0
         self.last_p_pump = 0.0
 
-        # remise à zéro du compteur de pas
         self.step_count = 0
 
         return self._get_obs(), {}
@@ -249,8 +222,8 @@ class HeatNetworkEnv(gym.Env):
             (self.current_t, t_next),
             self.state,
             method="RK45",
-            rtol=SIMULATION_PARAMS["rtol"],
-            atol=SIMULATION_PARAMS["atol"],
+            rtol=config.SIMULATION_PARAMS["rtol"],
+            atol=config.SIMULATION_PARAMS["atol"],
         )
         self.state = sol.y[:, -1]
         self.current_t = t_next
@@ -297,23 +270,48 @@ class HeatNetworkEnv(gym.Env):
                 # p_supplied ≈ min(p_target, m_in * cp * (T_in - t_min_return)).
                 p_supplied = min(
                     p_target,
-                    m_in * cp * max(T_out - MIN_RETURN_TEMP, 0.0)
+                    m_in * cp * max(T_out - config.MIN_RETURN_TEMP, 0.0)
                 )
 
             total_p_supplied += p_supplied
             total_mismatch += abs(p_supplied - p_target)
 
         # --- Coût à la source ---
-        p_source = self.actual_mass_flow * cp * (self.actual_inlet_temp - MIN_RETURN_TEMP)
+        p_source = self.actual_mass_flow * cp * (self.actual_inlet_temp - config.MIN_RETURN_TEMP)
         p_pump = 1000.0 * self.actual_mass_flow  # pas de modèle hydraulique, on prend un deltaP fixé arbitraire
 
-        # Ronction de récompense :mismatch (confort) > coûts énergétiques
-        w = REWARD_WEIGHTS
-        reward = - (
-            w["mismatch"] * total_mismatch
-            + w["boiler"]   * p_source
-            + w["pump"]     * p_pump
-        )
+        # --- Calcul de la récompense (Policy) ---
+        # Paramètres depuis config
+        rc = config.REWARD_CONFIG
+        w = rc["weights"]
+        p = rc["params"]
+        
+        # Conversion en kW pour le calcul du reward (car paramètres calibrés en kW)
+        p_dem_kw = total_p_demand / 1000.0
+        p_sup_kw = total_p_supplied / 1000.0
+        p_src_kw = p_source / 1000.0
+        p_pump_kw = p_pump / 1000.0
+        
+        # 1. Confort : pénalise la sous-production (P_supplied < P_demand)
+        # Formule : - a * ((max(0, P_dem - P_sup) / P_ref)^2)
+        under_supply = max(0.0, p_dem_kw - p_sup_kw)
+        r_confort = -w["comfort"] * ((under_supply / p["p_ref"]) ** 2)
+
+        # 2. Sobriété Production : pénalise la surproduction (P_boiler > P_demand)
+        # Formule : - b * max(0, (P_boiler - P_dem) / P_ref)
+        excess_prod = max(0.0, p_src_kw - p_dem_kw)
+        r_sobriete_prod = -w["boiler"] * (excess_prod / p["p_ref"])
+
+        # 3. Sobriété Pompage : centré sur nominal + pénalité linéaire si dépassement
+        # Formule : - c * [ ((P - P_nom)/P_nom)^2 + max(0, (P - P_nom)/P_nom) ]
+        p_nom = p["p_pump_nominal"]
+        diff_norm = (p_pump_kw - p_nom) / p_nom
+        term_quad = diff_norm**2
+        term_lin = max(0.0, diff_norm)
+        
+        r_sobriete_pump = -w["pump"] * (term_quad + term_lin)
+
+        reward = r_confort + r_sobriete_prod + r_sobriete_pump
 
         # mémoriser pour render()
         self.last_total_p_demand = total_p_demand

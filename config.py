@@ -3,10 +3,10 @@ Configuration centralisée pour le réseau de chaleur et l'entraînement RL.
 Contient uniquement des paramètres considérés "fixes" pour une campagne donnée.
 """
 
-# --- Seed globale (partagée sim / RL) ---
+# --- Seed globale ---
 GLOBAL_SEED = 42
 
-# --- Topologie globale (partagée sim / RL) ---
+# --- Topologie globale ---
 EDGES = [
     (1, 2), (2, 3), (3, 4), (4, 5), (5, 6),
     (3,10), (10,11),
@@ -19,22 +19,25 @@ PHYSICAL_PROPS = dict(
     cp=4182.0,
     thermal_conductivity=0.0,
     external_temp=10.0,
-    heat_loss_coeff=1.5,    # pas utilisé directement (voir génération aléatoire)
+)
+
+# --- Paramètres de génération des conduites (Pipe.generate_parameters) ---
+PIPE_GENERATION = dict(
+    length_min=50.0,            # m, longueur minimale d'une conduite
+    length_max=300.0,
+    diameter_min=0.15,          # m, diamètre minimal d'une conduite
+    diameter_max=0.35,
+    heat_loss_coeff_min=0.90,   # W/m²/K
+    heat_loss_coeff_max=1.75,
 )
 
 # Température minimale de retour (utilisée pour le soutirage de puissance ET l'état initial)
 MIN_RETURN_TEMP = 40.0      # °C
 
-# --- Poids de la fonction de récompense (pénalités RL) ---
-# VecNormalize s'occupera de l'échelle globale, ici on définit l'importance relative.
-# Le mismatch (confort) doit dominer les coûts énergétiques.
-REWARD_WEIGHTS = dict(
-    # mismatch=5.0e-5,   # Priorité absolue
-    # boiler=1.0e-9,     # Coût secondaire
-    # pump=1.0e-7,       # Coût secondaire
-    mismatch=1.0e-4,    # Priorité absolue
-    boiler=1.0e-5,      # Coût secondaire
-    pump=1.0e-2,        # Coût secondaire
+# --- Conditions initiales réseau / actionneurs ---
+INITIAL_CONDITIONS = dict(
+    initial_temp=MIN_RETURN_TEMP,  # °C dans toutes les cellules au reset
+    initial_flow=15.0,             # kg/s débit de base à la source
 )
 
 # --- Paramètres de discrétisation / simulation "physique" ---
@@ -46,30 +49,14 @@ SIMULATION_PARAMS = dict(
     warmup=3600*3           # Durée de pré-chauffe (warmup) avant la simulation principale (s)
 )
 
-# --- Paramètres de génération des conduites (Pipe.generate_parameters) ---
-PIPE_GENERATION = dict(
-    length_min=50.0,        # m, longueur minimale d'une conduite
-    length_max=300.0,       # m, longueur maximale d'une conduite
-    diameter_min=0.15,      # m
-    diameter_max=0.35,      # m
-    h_min=0.90,             # W/m²/K (ou équivalent utilisé dans Pipe)
-    h_max=1.75,
-)
-
-# --- Conditions initiales réseau / actionneurs ---
-INITIAL_CONDITIONS = dict(
-    initial_temp=MIN_RETURN_TEMP,  # °C dans toutes les cellules au reset
-    initial_flow=20.0,             # kg/s débit de base à la source
-)
-
 # --- Pas de contrôle RL (référence temporelle pour les rampes et les steps) ---
 dt_rl = 10  # s, pas de contrôle explicite pour le RL et pour les profils "discrets"
 
-# --- Paramètres des profils de puissance demandée aux consommateurs ---
+# --- Paramètres des profils de puissance demandée par les consommateurs ---
 POWER_PROFILE_CONFIG = dict(
     p_min=100_000.0,        # W
     p_max=300_000.0,        # W
-    step_time=3600.0,       # s entre deux changements (échelle "macro")
+    step_time=3600.0,       # s entre deux changements de demande
     smooth_factor=1.0,      # >1 => profils plus lisses
 )
 
@@ -81,8 +68,8 @@ POWER_PROFILE_CONFIG["step_time_steps"] = int(
 # --- Contraintes physiques / actionneurs (utilisées dans l'env Gym) ---
 # On exprime les rampes en K/min et kg/s/min puis on les convertit en "par pas" via dt_rl.
 _ramp_up_K_per_min = 3.0        # montée max ≈ 3 °C/min
-_ramp_down_K_per_min = 20.0     # descente max ≈ 20 °C/min
-_ramp_flow_kgps_per_min = 3.    # variation débit ≈ 3 kg/s par minute
+_ramp_down_K_per_min = 3.0     # en pratique, en mélangeant le fluide avec la sortie : ≈ 20 °C/min
+_ramp_flow_kgps_per_min = 3.0    # variation débit ≈ 3 kg/s par minute
 
 CONTROL_LIMITS = dict(
     temp_min=50.0,
@@ -96,16 +83,36 @@ CONTROL_LIMITS = dict(
 
 # --- Paramètres d'entraînement RL ---
 _episode_length_steps = int(SIMULATION_PARAMS["t_max_day"] / dt_rl)
-_total_episodes = 200 # On augmente un peu le budget total
+_total_episodes = 200 # nombre total d'épisodes d'entraînement
 _total_timesteps = _episode_length_steps * _total_episodes
-_n_steps_update = 2048
+
+# _n_steps_update : int(1*3600 / dt_rl)  # 1 heure de simulation par update
+# AUGMENTATION : 1h (360 steps) est souvent trop court pour PPO. 
+# On passe à 2048 steps (standard SB3) ou environ 6h de simulation pour stabiliser le gradient.
+_n_steps_update = 2048 
+
 RL_TRAINING = dict(
     dt=dt_rl,                            # pas de contrôle explicite RL
     total_timesteps=_total_timesteps,
     episode_length_steps=_episode_length_steps,
     n_steps_update=_n_steps_update,
     learning_rate=3e-4,
-    save_freq_episodes=5,      # Sauvegarde moins fréquente en nombre d'épisodes car n_steps est grand
+    ent_coef=0.05,             # AJOUT : Coefficient d'entropie (0.01 -> 0.05 pour forcer l'exploration)
+    save_freq_episodes=5,      # Fréquence de sauvegarde en nombre d'épisodes
     use_s3_checkpoints=False,  # False = uniquement local, True = local + S3
-    normalize_env=False,        # True = VecNormalize (recommandé), False = DummyVecEnv brut
+    normalize_env=False,        # MODIFICATION : True aide énormément la convergence et l'exploration
+)
+
+# --- Poids de la fonction de récompense (pénalités RL) ---
+# Configuration alignée avec reward_plot.py
+REWARD_CONFIG = dict(
+    weights=dict(
+        comfort=10.0,   # Coeff A (Quadratique)
+        boiler=14.0,    # Coeff B (Sobriété Boiler)
+        pump=3.5        # Coeff C (Sobriété Pompage)
+    ),
+    params=dict(
+        p_ref=2000.0,         # Puissance de référence (kW)
+        p_pump_nominal=15.0   # Puissance nominale pompe (kW)
+    )
 )

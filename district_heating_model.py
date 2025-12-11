@@ -14,7 +14,7 @@ class Pipe:
     def generate_parameters(edges, dx, seed,
                             length_min=None, length_max=None,
                             diameter_min=None, diameter_max=None,
-                            h_min=None, h_max=None):
+                            heat_loss_coeff_min=None, heat_loss_coeff_max=None):
         """
         Génère de façon reproductible les paramètres géométriques des conduites
         pour une liste d'arêtes `edges` et un `seed` donné.
@@ -38,10 +38,10 @@ class Pipe:
             diameter_min = PIPE_GENERATION["diameter_min"]
         if diameter_max is None:
             diameter_max = PIPE_GENERATION["diameter_max"]
-        if h_min is None:
-            h_min = PIPE_GENERATION["h_min"]
-        if h_max is None:
-            h_max = PIPE_GENERATION["h_max"]
+        if heat_loss_coeff_min is None:
+            heat_loss_coeff_min = PIPE_GENERATION["heat_loss_coeff_min"]
+        if heat_loss_coeff_max is None:
+            heat_loss_coeff_max = PIPE_GENERATION["heat_loss_coeff_max"]
 
         rng = np.random.default_rng(seed)
         n_pipes = len(edges)
@@ -58,7 +58,7 @@ class Pipe:
         lengths = n_segments * dx
 
         diameters = rng.uniform(diameter_min, diameter_max, size=n_pipes)
-        h_vals = rng.uniform(h_min, h_max, size=n_pipes)
+        h_vals = rng.uniform(heat_loss_coeff_min, heat_loss_coeff_max, size=n_pipes)
 
         return lengths, diameters, n_segments, h_vals
 
@@ -728,6 +728,7 @@ class DistrictHeatingNetwork:
         p_supplied_mat = np.zeros((n_nodes, n_t), dtype=float)
 
         for i, nid in enumerate(node_ids):
+            # Extraction des séries par noeud
             p_dem_series = np.array(self.node_power_demand_per_node[nid], dtype=float)
             p_sup_series = np.array(self.node_power_supplied_per_node[nid], dtype=float)
 

@@ -44,8 +44,8 @@ def run_simulation():
         # n_segments_max=PIPE_GENERATION["n_segments_max"],
         # diameter_min=PIPE_GENERATION["diameter_min"],
         # diameter_max=PIPE_GENERATION["diameter_max"],
-        # h_min=PIPE_GENERATION["h_min"],
-        # h_max=PIPE_GENERATION["h_max"],
+        # heat_loss_coeff_min=PIPE_GENERATION["heat_loss_coeff_min"],
+        # heat_loss_coeff_max=PIPE_GENERATION["heat_loss_coeff_max"],
     )
 
     pipes_list = []
@@ -64,11 +64,11 @@ def run_simulation():
         pipes_list.append(p)
 
     # Température source en entrée
-    inlet_temp = 60.0  # °C constante
+    inlet_temp = 100.0  # °C constante
     # inlet_temp = generate_step_function(t_max_day, 900.0, 70.0, 90.0, seed=seed)   # °C
 
     # Débit massique en entrée
-    inlet_mass_flow = 5.0  # kg/s constant
+    inlet_mass_flow = 15.0  # kg/s constant
     # inlet_mass_flow = generate_step_function(t_max_day, 900.0, 10.0, 20.0, seed=seed)  # kg/s
 
     # Profils de puissance demandée par les noeuds consommateurs
