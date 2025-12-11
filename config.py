@@ -83,7 +83,7 @@ CONTROL_LIMITS = dict(
 
 # --- Paramètres d'entraînement RL ---
 _episode_length_steps = int(SIMULATION_PARAMS["t_max_day"] / dt_rl)
-_total_episodes = 200 # nombre total d'épisodes d'entraînement
+_total_episodes = 400 # nombre total d'épisodes d'entraînement
 _total_timesteps = _episode_length_steps * _total_episodes
 
 # _n_steps_update : int(1*3600 / dt_rl)  # 1 heure de simulation par update
@@ -98,7 +98,7 @@ RL_TRAINING = dict(
     n_steps_update=_n_steps_update,
     learning_rate=3e-4,
     ent_coef=0.05,             # AJOUT : Coefficient d'entropie (0.01 -> 0.05 pour forcer l'exploration)
-    save_freq_episodes=5,      # Fréquence de sauvegarde en nombre d'épisodes
+    save_freq_episodes=10,      # Fréquence de sauvegarde en nombre d'épisodes
     use_s3_checkpoints=False,  # False = uniquement local, True = local + S3
     normalize_env=False,        # MODIFICATION : True aide énormément la convergence et l'exploration
 )
