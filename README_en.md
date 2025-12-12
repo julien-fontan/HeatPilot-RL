@@ -134,12 +134,7 @@ The core of the code is in `district_heating_model.py`. A one-dimensional approa
 
 Each pipe is divided into small segments of length $dx$. The temperature evolution $T$ follows:
 
-$$
-\frac{\partial T}{\partial t}
-= -v \frac{\partial T}{\partial x}
-- \frac{4 h}{\rho c_p D}(T - T_{ext})
-+ \alpha \frac{\partial^2 T}{\partial x^2}
-$$
+$$\frac{\partial T}{\partial t}= -v \frac{\partial T}{\partial x}- \frac{4 h}{\rho c_p D}(T - T_{ext})+ \alpha \frac{\partial^2 T}{\partial x^2}$$
 
 Where:
 - $v$: fluid velocity (m/s),
@@ -152,11 +147,7 @@ Where:
 
 For a cell i, a 1st order **upwind** scheme is used:
 
-$$
-\frac{dT_i}{dt}
-= - \frac{\dot{m}}{\rho A dx}(T_i - T_{i-1})
-  - \lambda (T_i - T_{ext})
-$$
+$$\frac{dT_i}{dt}= - \frac{\dot{m}}{\rho A dx}(T_i - T_{i-1})  - \lambda (T_i - T_{ext})$$
 
 with:
 
@@ -174,9 +165,7 @@ Nodes ensure:
 
 1. **Mass conservation:**
 
-$$
-\sum \dot{m}_{in} = \sum \dot{m}_{out}
-$$
+$$\sum \dot{m}_{in} = \sum \dot{m}_{out}$$
 
 This conservation is imposed by flow routing via **split fractions** at branching nodes.
 
@@ -258,15 +247,15 @@ $$\text{Reward} = r_{\text{comfort}} + r_{\text{boiler sobriety}} + r_{\text{pum
 
 1. **Comfort ($r_{\text{comfort}}$)**: linearly penalizes **under-production** only (consumers are cold). Over-production is not penalized here (it is in the sobriety term).
    
-   $$ r_{\text{comfort}} = - A \times \frac{\max(0, P_{\text{demand}} - P_{\text{supplied}})}{P_{\text{ref}}} $$
+  $$r_{\text{comfort}} = - A \times \frac{\max(0, P_{\text{demand}} - P_{\text{supplied}})}{P_{\text{ref}}}$$
 
 2. **Production sobriety ($r_{\text{prod sobriety}}$)**: linearly penalizes **over-production** (boiler energy waste).
    
-   $$ r_{\text{prod\_sobriety}} = - B \times \frac{\max(0, P_{\text{boiler}} - P_{\text{demand}})}{P_{\text{ref}}} $$
+  $$r_{\text{prod\_sobriety}} = - B \times \frac{\max(0, P_{\text{boiler}} - P_{\text{demand}})}{P_{\text{ref}}}$$
 
 3. **Pumping sobriety ($r_{\text{pump sobriety}}$)**: penalizes deviation from **nominal power** (quadratic) and adds a linear penalty for any excess beyond nominal. This encourages the pump to work around its optimal operating point.
    
-   $$ r_{\text{pump\_sobriety}} = - C \times \left[ \left(\frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right)^2 + \max\left(0, \frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right) \right] $$
+  $$r_{\text{pump\_sobriety}} = - C \times \left[ \left(\frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right)^2 + \max\left(0, \frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right) \right]$$
 
 **Current weights (`config.py`):**
 - $A = 1.0$ (Comfort)
