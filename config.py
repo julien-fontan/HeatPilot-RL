@@ -79,6 +79,7 @@ CONTROL_LIMITS = dict(
     max_temp_rise_per_dt=_ramp_up_K_per_min * dt_rl / 60.0,
     max_temp_drop_per_dt=_ramp_down_K_per_min * dt_rl / 60.0,
     max_flow_delta_per_dt=_ramp_flow_kgps_per_min * dt_rl / 60.0,
+    enable_ramps=False,  # True = applique les rampes physiques, False = changement instantané
 )
 
 # --- Paramètres d'entraînement RL ---
@@ -96,20 +97,24 @@ RL_TRAINING = dict(
     total_timesteps=_total_timesteps,
     episode_length_steps=_episode_length_steps,
     n_steps_update=_n_steps_update,
-    learning_rate=3e-4,
-    ent_coef=0.05,             # AJOUT : Coefficient d'entropie (0.01 -> 0.05 pour forcer l'exploration)
-    save_freq_episodes=10,      # Fréquence de sauvegarde en nombre d'épisodes
+    learning_rate=5e-5,
+    ent_coef=0.09,             # AJOUT : Coefficient d'entropie (0.01 -> 0.05 pour forcer l'exploration)
+    save_freq_episodes=5,      # Fréquence de sauvegarde en nombre d'épisodes
     use_s3_checkpoints=False,  # False = uniquement local, True = local + S3
-    normalize_env=False,        # MODIFICATION : True aide énormément la convergence et l'exploration
+    normalize_env=True,        # MODIFICATION : True aide énormément la convergence et l'exploration
 )
 
 # --- Poids de la fonction de récompense (pénalités RL) ---
 # Configuration alignée avec reward_plot.py
 REWARD_CONFIG = dict(
     weights=dict(
-        comfort=1.0,    # Coeff A (Linéaire)
-        boiler=1.0,     # Coeff B (Sobriété Boiler)
-        pump=0.5        # Coeff C (Sobriété Pompage)
+        # comfort=5.0,    # Coeff A (Linéaire)
+        # boiler=1.0,     # Coeff B (Sobriété Boiler)
+        # pump=0.5        # Coeff C (Sobriété Pompage)
+        
+        comfort=25,    # Coeff A (Linéaire)
+        boiler=14,     # Coeff B (Sobriété Boiler)
+        pump=3.5        # Coeff C (Sobriété Pompage)
     ),
     params=dict(
         p_ref=2000.0,         # Puissance de référence (kW)

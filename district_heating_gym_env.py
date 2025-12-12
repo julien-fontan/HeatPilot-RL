@@ -31,6 +31,7 @@ class HeatNetworkEnv(gym.Env):
         self.max_temp_rise = config.CONTROL_LIMITS["max_temp_rise_per_dt"]
         self.max_temp_drop = config.CONTROL_LIMITS["max_temp_drop_per_dt"]
         self.max_flow_var = config.CONTROL_LIMITS["max_flow_delta_per_dt"]
+        self.enable_ramps = config.CONTROL_LIMITS.get("enable_ramps", True)
 
         # --- Analyse de la Topologie ---
         self.edges = config.EDGES
@@ -177,22 +178,31 @@ class HeatNetworkEnv(gym.Env):
 
         # --- Application des contraintes (rampes de températures) ---
         
-        # 1. Température (+0.5 max, ou baisse rapide)
-        delta_temp = target_temp - self.actual_inlet_temp
-        if delta_temp > self.max_temp_rise:
-            self.actual_inlet_temp += self.max_temp_rise
-        elif delta_temp < -self.max_temp_drop:
-            self.actual_inlet_temp -= self.max_temp_drop
+        if self.enable_ramps:
+            # 1. Température (+0.5 max, ou baisse rapide)
+            delta_temp = target_temp - self.actual_inlet_temp
+            if delta_temp > self.max_temp_rise:
+                self.actual_inlet_temp += self.max_temp_rise
+            elif delta_temp < -self.max_temp_drop:
+                self.actual_inlet_temp -= self.max_temp_drop
+            else:
+                self.actual_inlet_temp = target_temp
         else:
+            # Application directe sans rampe
             self.actual_inlet_temp = target_temp
             
         # Vérifie que la température reste dans les bornes
         self.actual_inlet_temp = np.clip(self.actual_inlet_temp, self.temp_min, self.temp_max)
 
-        # 2. Débit massique (rampes encore une fois)
-        delta_flow = target_flow - self.actual_mass_flow
-        delta_flow = np.clip(delta_flow, -self.max_flow_var, self.max_flow_var)
-        self.actual_mass_flow += delta_flow
+        if self.enable_ramps:
+            # 2. Débit massique (rampes encore une fois)
+            delta_flow = target_flow - self.actual_mass_flow
+            delta_flow = np.clip(delta_flow, -self.max_flow_var, self.max_flow_var)
+            self.actual_mass_flow += delta_flow
+        else:
+            # Application directe sans rampe
+            self.actual_mass_flow = target_flow
+
         self.actual_mass_flow = np.clip(self.actual_mass_flow, self.flow_min, self.flow_max)
 
         # 3. Fractions de répartition du débit aux noeuds ramifiés
@@ -293,9 +303,9 @@ class HeatNetworkEnv(gym.Env):
         p_pump_kw = p_pump / 1000.0
         
         # 1. Confort : pénalise la sous-production (P_supplied < P_demand)
-        # Formule : - a * ((max(0, P_dem - P_sup) / P_ref)^2)
+        # Formule : - a * (max(0, P_dem - P_sup) / P_ref)  [Linéaire]
         under_supply = max(0.0, p_dem_kw - p_sup_kw)
-        r_confort = -w["comfort"] * ((under_supply / p["p_ref"]) ** 2)
+        r_confort = -w["comfort"] * ((under_supply / p["p_ref"]))
 
         # 2. Sobriété Production : pénalise la surproduction (P_boiler > P_demand)
         # Formule : - b * max(0, (P_boiler - P_dem) / P_ref)

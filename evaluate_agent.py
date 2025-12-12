@@ -179,6 +179,22 @@ def main():
     print("Génération des graphiques...")
     time_h = history["time"] / 3600.0
     
+    # Fonction de moyenne mobile
+    def moving_average(x, w):
+        return np.convolve(x, np.ones(w), 'valid') / w
+    
+    window = 6
+    # Application sur les grandeurs pilotées (T_inlet et mass_flow)
+    T_in_smooth = moving_average(history["T_inlet"], window)
+    m_flow_smooth = moving_average(history["mass_flow"], window)
+    
+    # Application sur la puissance fournie et le reward
+    p_sup_smooth = moving_average(history["p_supplied_tot"], window)
+    rew_smooth = moving_average(history["rewards"], window)
+
+    # Ajustement du temps pour correspondre à la taille réduite par la convolution 'valid'
+    time_smooth = time_h[window-1:]
+    
     # Récupération des IDs si disponibles
     if "consumer_node_ids" in history:
         node_ids = history["consumer_node_ids"]
@@ -186,44 +202,47 @@ def main():
         node_ids = range(history["consumer_temps"].shape[1])
 
     # 1. Vue d'ensemble
-    plt.figure(figsize=(15, 25))
+    plt.figure(figsize=(5, 9))
     
     plt.subplot(4, 1, 1)
-    plt.plot(time_h, history["T_inlet"], 'k-', label="T_depart (Source)", linewidth=2)
+    plt.plot(time_smooth, T_in_smooth, label="T inlet (source)", linewidth=2)
     cons_temps = history["consumer_temps"]
-    for i, nid in enumerate(node_ids):
-        plt.plot(time_h, cons_temps[:, i], label=f"Node {nid}", alpha=0.7)
-    plt.ylabel("Température (°C)")
-    plt.title(f"Évaluation : {MODEL_SUBDIR} (iter {iteration})")
+    # for i, nid in enumerate(node_ids):
+    #     plt.plot(time_h, cons_temps[:, i], label=f"Node {nid}", alpha=0.7)
+    plt.ylabel("Temperature (°C)")
+    # plt.title(f"Évaluation : {MODEL_SUBDIR} (iter {iteration})")
     plt.legend(loc='upper right', fontsize='small', ncol=3)
     plt.grid(True)
     
     plt.subplot(4, 1, 2)
-    plt.plot(time_h, history["mass_flow"], 'b-')
-    plt.ylabel("Débit (kg/s)")
-    plt.title("Débit Massique")
+    plt.plot(time_smooth, m_flow_smooth, 'b-')
+    plt.ylabel("Mass flow (kg/s)")
+    # plt.title("Débit massique")
     plt.grid(True)
     
     plt.subplot(4, 1, 3)
-    plt.plot(time_h, history["p_demand_tot"]/1000, 'k--', label="Demande")
-    plt.plot(time_h, history["p_supplied_tot"]/1000, 'g-', label="Fournie", alpha=0.7)
-    plt.ylabel("Puissance (kW)")
-    plt.title("Puissance Totale Consommateurs")
-    plt.legend()
+    plt.plot(time_h, history["p_demand_tot"]/1000, 'k--', label="Demand")
+    # Utilisation de la version lissée pour la puissance fournie
+    plt.plot(time_smooth, p_sup_smooth/1000, 'g-', label="Supplied (smoothed)", alpha=0.7)
+    plt.ylabel("Power (kW)")
+    # plt.title("Puissance totale consommateurs")
+    plt.legend(loc='upper right')
     plt.grid(True)
 
     plt.subplot(4, 1, 4)
-    plt.plot(time_h, history["rewards"], 'r-', alpha=0.5)
+    # Utilisation de la version lissée pour le reward
+    plt.plot(time_smooth, rew_smooth, 'r-', alpha=0.8)
     plt.ylabel("Reward")
-    plt.xlabel("Temps (h)")
-    plt.title("Récompense instantanée")
+    plt.xlabel("Time (h)")
+    # plt.title("Récompense instantanée")
     plt.grid(True)
     
     plt.tight_layout()
-    plot_path = os.path.join(PLOTS_DIR, f"eval_{MODEL_SUBDIR}_{iteration}.png")
-    plt.savefig(plot_path)
+    plot_path = os.path.join(PLOTS_DIR, f"eval_{MODEL_SUBDIR}_{iteration}.svg")
+    plt.savefig(plot_path, transparent=True)
     print(f"Plot sauvegardé : {plot_path}")
     plt.show()
 
-if __name__ == "__main__":
-    main()
+
+# if __name__ == "__main__":
+main()

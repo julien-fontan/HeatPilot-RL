@@ -64,11 +64,11 @@ def run_simulation():
         pipes_list.append(p)
 
     # Température source en entrée
-    inlet_temp = 100.0  # °C constante
+    inlet_temp = 70.0  # °C constante
     # inlet_temp = generate_step_function(t_max_day, 900.0, 70.0, 90.0, seed=seed)   # °C
 
     # Débit massique en entrée
-    inlet_mass_flow = 15.0  # kg/s constant
+    inlet_mass_flow = 12.0  # kg/s constant
     # inlet_mass_flow = generate_step_function(t_max_day, 900.0, 10.0, 20.0, seed=seed)  # kg/s
 
     # Profils de puissance demandée par les noeuds consommateurs
@@ -143,19 +143,35 @@ def run_simulation():
     # --- Figures ---
     time_hours = sol.t / 3600.0
 
+    # --- Lissage (Moyenne mobile 1 min) ---
+    def moving_average(x, w):
+        return np.convolve(x, np.ones(w), 'valid') / w
+
+    # Calcul de la fenêtre (5 minutes / dt)
+    window_size = int(5*60.0 / dt)
+    if window_size < 1: window_size = 1
+    
+    # Application du lissage sur les totaux
+    p_demand_tot_smooth = moving_average(p_demand_tot, window_size)
+    p_supplied_tot_smooth = moving_average(p_supplied_tot, window_size)
+    p_boiler_smooth = moving_average(p_boiler, window_size)
+    
+    # Ajustement du vecteur temps pour correspondre à la taille réduite par la convolution 'valid'
+    time_hours_smooth = time_hours[window_size-1:]
+
     # 1) Bilan demande vs fournie aux consommateurs (totale)
     plt.figure(figsize=(8, 4))
-    plt.plot(time_hours, p_demand_tot / 1e3, label="P_demand_tot (kW)")
-    plt.plot(time_hours, p_supplied_tot / 1e3, label="P_supplied_tot (kW)")
-    plt.plot(time_hours, p_boiler / 1e3, label="P_boiler (kW)")
-    plt.xlabel("Temps (h)")
-    plt.ylabel("Puissance (kW)")
+    plt.plot(time_hours_smooth, p_demand_tot_smooth / 1e3, label="Demand total")
+    plt.plot(time_hours_smooth, p_supplied_tot_smooth / 1e3, label="Supplied total")
+    plt.plot(time_hours_smooth, p_boiler_smooth / 1e3, label="Boiler power")
+    plt.xlabel("Time (h)")
+    plt.ylabel("Power (kW)")
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
 
-    plot_path = os.path.join(PLOTS_DIR, "power_balance_consumers.png")
-    plt.savefig(plot_path, dpi=150)
+    plot_path = os.path.join(PLOTS_DIR, "power_balance_consumers.svg")
+    plt.savefig(plot_path, transparent=True)
     print(f"Figure sauvegardée dans {plot_path}")
     plt.show()
 
@@ -167,43 +183,44 @@ def run_simulation():
         if indices_to_plot:
             plt.figure(figsize=(10, 6))
             # fréquence des marqueurs : ~200 marqueurs max sur la courbe
-            n_points = len(time_hours)
+            n_points = len(time_hours_smooth)
             marker_every = 100
 
             for i in indices_to_plot:
                 nid = node_ids[i]
+                
+                # Lissage par noeud
+                p_dem_node_smooth = moving_average(p_nodes_demand[i], window_size)
+                p_sup_node_smooth = moving_average(p_nodes_supplied[i], window_size)
+
                 # première courbe (demande) : trait continu + ronds, marqueurs espacés
                 line, = plt.plot(
-                    time_hours,
-                    p_nodes_demand[i] / 1e3,
-                    linestyle="-",
-                    marker="o",
-                    markevery=marker_every,
+                    time_hours_smooth,
+                    p_dem_node_smooth / 1e3,
+                    linestyle="dashed",
                     markersize=4,
-                    linewidth=1,
-                    label=f"P_demand node {nid} (kW)",
+                    linewidth=2,
+                    label=f"Demand (node {nid})",
                 )
                 color = line.get_color()
                 # deuxième courbe (reçue) : même couleur, trait continu + triangles, même espacement
                 plt.plot(
-                    time_hours,
-                    p_nodes_supplied[i] / 1e3,
-                    linestyle="-",
-                    marker="^",
-                    markevery=marker_every,
+                    time_hours_smooth,
+                    p_sup_node_smooth / 1e3,
+                    linestyle="solid",
                     markersize=5,
                     color=color,
-                    linewidth=1,
-                    label=f"P_supplied node {nid} (kW)",
+                    linewidth=2,
+                    label=f"Supplied (node {nid})",
                 )
-            plt.xlabel("Temps (h)")
-            plt.ylabel("Puissance (kW)")
-            plt.title("Puissances demandée / fournie (nœuds 1 à 6)")
+            plt.xlabel("Time (h)")
+            plt.ylabel("Power (kW)")
+            plt.title("Power Demand vs Supplied (Nodes 1-6)")
             plt.grid(True)
             plt.legend(fontsize="small", ncol=2)
             plt.tight_layout()
-            plot_path_nodes = os.path.join(PLOTS_DIR, "power_per_node_1_6.png")
-            plt.savefig(plot_path_nodes, dpi=150)
+            plot_path_nodes = os.path.join(PLOTS_DIR, "power_per_node_1_6.svg")
+            plt.savefig(plot_path_nodes, transparent=True)
             print(f"Figure (par noeud 1–6) sauvegardée dans {plot_path_nodes}")
             plt.show()
     # # --- Visualisation 1D (déjà existante) ---
