@@ -202,7 +202,7 @@ def main():
         node_ids = range(history["consumer_temps"].shape[1])
 
     # 1. Vue d'ensemble
-    plt.figure(figsize=(5, 9))
+    plt.figure(figsize=(7, 11))
     
     plt.subplot(4, 1, 1)
     plt.plot(time_smooth, T_in_smooth, label="T inlet (source)", linewidth=2)
