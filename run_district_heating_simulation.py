@@ -215,7 +215,7 @@ def run_simulation():
                 )
             plt.xlabel("Time (h)")
             plt.ylabel("Power (kW)")
-            plt.title("Power Demand vs Supplied (Nodes 1-6)")
+            # plt.title("Power Demand vs Supplied (Nodes 1-6)")
             plt.grid(True)
             plt.legend(fontsize="small", ncol=2)
             plt.tight_layout()
