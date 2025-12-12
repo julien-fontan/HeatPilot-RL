@@ -105,24 +105,15 @@ RL_TRAINING = dict(
 )
 
 # --- Poids de la fonction de récompense (pénalités RL) ---
-# Configuration alignée avec la nouvelle définition (Markdown)
+# Configuration alignée avec reward_plot.py
 REWARD_CONFIG = dict(
-    p_ref=2000.0,  # kW, Puissance de référence pour la normalisation
-    
-    comfort=dict(
-        linear_coeff=1.0,       # Coeff devant |e|/P_ref
-        quadratic_coeff=500.0,  # Coeff devant ((|e|-delta)/P_ref)^2
-        threshold=10.0          # kW (delta)
+    weights=dict(
+        comfort=25,    # Coeff A (Linéaire)
+        boiler=14,     # Coeff B (Sobriété Boiler)
+        pump=3.5        # Coeff C (Sobriété Pompage)
     ),
-    
-    production=dict(
-        coeff=0.3               # Coeff devant (P_prod - P_sup)/P_ref
-    ),
-    
-    pump=dict(
-        linear_coeff=0.1,       # Coeff devant P_pump / P_pump_ref
-        quadratic_coeff=5.0,    # Coeff devant (d/17)^2
-        flow_range=(5.0, 17.0), # [min, max] kg/s pour la zone nominale
-        p_pump_ref=16000.0      # kW (Reference pour la partie linéaire pompe)
+    params=dict(
+        p_ref=2000.0,         # Puissance de référence (kW)
+        p_pump_nominal=15.0   # Puissance nominale pompe (kW)
     )
 )
