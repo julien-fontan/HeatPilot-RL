@@ -132,12 +132,7 @@ Le cœur du code se trouve dans `district_heating_model.py`. Une approche unidim
 
 Chaque tuyau est divisé en petits segments de longueur $dx$. L'évolution de la température $T$ suit :
 
-$$
-\frac{\partial T}{\partial t}
-= -v \frac{\partial T}{\partial x}
-- \frac{4 h}{\rho c_p D}(T - T_{ext})
-+ \alpha \frac{\partial^2 T}{\partial x^2}
-$$
+$$\frac{\partial T}{\partial t}= -v \frac{\partial T}{\partial x}- \frac{4 h}{\rho c_p D}(T - T_{ext})+ \alpha \frac{\partial^2 T}{\partial x^2}$$
 
 Où :
 - $v$ : vitesse du fluide (m/s),
@@ -150,11 +145,7 @@ Où :
 
 Pour une cellule i, on utilise un schéma **upwind** 1er ordre :
 
-$$
-\frac{dT_i}{dt}
-= - \frac{\dot{m}}{\rho A dx}(T_i - T_{i-1})
-  - \lambda (T_i - T_{ext})
-$$
+$$\frac{dT_i}{dt}= - \frac{\dot{m}}{\rho A dx}(T_i - T_{i-1})- \lambda (T_i - T_{ext})$$
 
 avec :
 
@@ -252,9 +243,7 @@ Ces bornes (`max_temp_rise_per_dt`, `max_temp_drop_per_dt`) empêchent l'agent d
 
 La récompense est construite pour équilibrer le confort thermique et la sobriété énergétique. Elle est définie dans `config.py` (`REWARD_CONFIG`) et calculée à chaque pas de temps.
 
-$$
-\text{Reward} = r_{\text{confort}} + r_{\text{sobriété chaudière}} + r_{\text{sobriété pompe}}
-$$
+$$\text{Reward} = r_{\text{confort}} + r_{\text{sobriété chaudière}} + r_{\text{sobriété pompe}}$$
 
 1. **Confort ($r_{\text{confort}}$)** : pénalise linéairement la **sous-production** uniquement (les consommateurs ont froid). La sur-production n'est pas pénalisée ici (elle l'est dans le terme de sobriété).
   $$r_{\text{confort}} = - A \times \frac{\max(0, P_{\text{demand}} - P_{\text{supplied}})}{P_{\text{ref}}}$$
@@ -316,7 +305,9 @@ pip install numpy scipy matplotlib gymnasium stable-baselines3
 ```
 
 ### 6.2. Étape 1 : régler la récompense (optionnel)
-### -> revoir
+
+-> revoir
+
 Utilisez l'outil interactif pour visualiser l'impact des poids $A, B, C$ sur la récompense en fonction de la puissance fournie et du débit :
 
 ```bash
@@ -404,7 +395,7 @@ On peut observer sur le graphe suivant, en fonction du nombre de mises à jour d
 - le reward moyen par pas d'un épisode
 - les énergies fournies et délivrées par épisode (=par jour) (calculées comme les intégrales de la puissance sur la journée).
 
-**Pourquoi le reward décroit-il au fur et à mesure des itérations ?**
+**Pourquoi le reward moyen décroit-il au fur et à mesure des itérations ?**
 
 ![](plots/summary_eval_PPO_normalisé1.svg)
 
