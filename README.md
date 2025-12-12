@@ -349,7 +349,7 @@ L'écart entre la puissance délivrée par la chaudière et la puissance fournie
 - La mauvaise répartition des débits dans les branchements. Les fractions massiques n'ayant pas été paramétrées, des surplus de chaleur peuvent avoir été envoyés dans des branches en nécessitant moins que d'autres. Il en résulte que la température de retour de ces branches est donc supérieure à `min_return_temp` : l'énergie fournie a mal été répartie. 
 - Mais aussi par les pertes conducto-convectives dans les canalisations (non quantifiées).
 
-Sur le graphe suivant, représentant uniquement les noeuds 1 à 6 (5 noeuds ne sont pas représentés par souci de visibilité), on peut voir que le réseau arrive à fournir de la puissance à tous les noeuds, sauf le dernier de la chaîne (noeud 6). Lorsque la puissance fournie à celui-ci arrive à zéro, cela signifie que la température du réseau à l'endroit ce noeud a atteint `min_return_temp = 40 °C`, on n'autorise donc plus de soutirage de puissance.
+Sur le graphe suivant, représentant uniquement les noeuds 1 à 6 (5 noeuds ne sont pas représentés par souci de visibilité), on peut voir que le réseau arrive à fournir de la puissance à tous les noeuds, sauf le dernier de la chaîne (noeud 6). Lorsque la puissance qui lui est fournie arrive à zéro, cela signifie que la température du réseau à l'endroit de ce noeud a atteint `min_return_temp = 40 °C`, on n'autorise donc plus de soutirage de puissance.
 
 ![](plots/power_per_node_1_6.svg)
 
