@@ -249,10 +249,10 @@ $$\text{Reward} = r_{\text{confort}} + r_{\text{sobriété chaudière}} + r_{\te
   $$r_{\text{confort}} = - A \times \frac{\max(0, P_{\text{demand}} - P_{\text{supplied}})}{P_{\text{ref}}}$$
 
 2. **Sobriété production ($r_{\text{sobriété prod}}$)** : pénalise linéairement la **sur-production** (gaspillage d'énergie chaudière).
-  $$r_{\text{sobriété\_prod}} = - B \times \frac{\max(0, P_{\text{boiler}} - P_{\text{demand}})}{P_{\text{ref}}}$$
+  $$r_{\text{sobriété prod}} = - B \times \frac{\max(0, P_{\text{boiler}} - P_{\text{demand}})}{P_{\text{ref}}}$$
 
 3. **Sobriété pompage ($r_{\text{sobriété pompe}}$)** : pénalise l'écart à la **puissance nominale** (quadratique) et ajoute une pénalité linéaire pour tout excès au-delà du nominal. Cela incite la pompe à travailler autour de son point de fonctionnement optimal.
-  $$r_{\text{sobriété\_pompe}} = - C \times \left[ \left(\frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right)^2 + \max\left(0, \frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right) \right]$$
+  $$r_{\text{sobriété pompe}} = - C \times \left[ \left(\frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right)^2 + \max\left(0, \frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right) \right]$$
 
 **Poids actuels (`config.py`) :**
 - $A = 1.0$ (confort)
