@@ -346,7 +346,7 @@ Dans cette configuration, les valeurs fixées en entrée sont trop faibles pour 
 ![Illustration de la simulation](plots/power_balance_consumers.svg)
 
 L'écart entre la puissance délivrée par la chaudière et la puissance fournie peut s'expliquer par deux choses :
-- Principalement par les fractions massiques, non paramétrées donc mal paramétrées. Effectivement, des surplus de chaleur peuvent être envoyés dans des branches en nécessitant moins de chaleur que d'autres. La température réelle de retour y est donc supérieure à `min_return_temp`.
+- Principalement par les fractions massiques, non paramétrées donc mal paramétrées. Effectivement, des surplus de chaleur peuvent être envoyés dans des branches nécessitant moins de chaleur que d'autres. La température réelle de retour y est donc supérieure à `min_return_temp`.
 - Mais aussi par les pertes conducto-convectives dans les canalisations (non quantifiées).
 
 Sur le graphe suivant, représentant uniquement les noeuds 1 à 6 (5 noeuds ne sont pas représentés par souci de visibilité), on peut voir que le réseau arrive à fournir de la puissance à tous les noeuds, sauf le dernier de la chaîne (noeud 6). Lorsque la puissance fournie à celui-ci arrive à zéro, cela signifie que la température du réseau à l'endroit ce noeud a atteint `min_return_temp = 40 °C`, on n'autorise donc plus de soutirage de puissance.
