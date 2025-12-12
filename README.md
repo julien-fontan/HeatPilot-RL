@@ -59,8 +59,8 @@ Le réseau simulé représente un **petit réseau de chaleur** d’ordre de gran
 Ce choix est cohérent avec la typologie des réseaux en France :
 - Les **petites chaufferies collectives** (quartiers résidentiels, petites communes) se situent généralement dans la gamme **0,5 à 3 MW**.
 - À titre de comparaison réelle :
-  - La chaudière biomasse de **Montigny-lès-Metz** fait **3,5 MW** [^1].
-  - Le réseau d'**Hazebrouck** dispose d'une chaudière biomasse de **5 MW** [^2].
+  - La chaudière biomasse de Montigny-lès-Metz fait 3,5 MW [^1].
+  - Le réseau d'Hazebrouck dispose d'une chaudière biomasse de 5 MW [^2].
   - Les chaudières industrielles (ex: gamme Bosch Unimat ou Viessmann) couvrent couramment cette plage [^3].
 
 Un réseau de 2 MW est donc représentatif d'une installation locale, bien loin des réseaux métropolitains comme la CPCU Paris (> 3 GW) ou ceux de La Défense (180 MW) [^4].
