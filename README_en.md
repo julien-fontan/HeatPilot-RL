@@ -252,18 +252,19 @@ These bounds (`max_temp_rise_per_dt`, `max_temp_drop_per_dt`) prevent the agent 
 
 The reward is built to balance thermal comfort and energy sobriety. It is defined in `config.py` (`REWARD_CONFIG`) and calculated at each time step.
 
-$$
-\text{Reward} = r_{\text{comfort}} + r_{\text{boiler sobriety}} + r_{\text{pump sobriety}}
-$$
+$$\text{Reward} = r_{\text{comfort}} + r_{\text{boiler sobriety}} + r_{\text{pump sobriety}}$$
 
 1. **Comfort ($r_{\text{comfort}}$)**: linearly penalizes **under-production** only (consumers are cold). Over-production is not penalized here (it is in the sobriety term).
+   
    $$ r_{\text{comfort}} = - A \times \frac{\max(0, P_{\text{demand}} - P_{\text{supplied}})}{P_{\text{ref}}} $$
 
 2. **Production sobriety ($r_{\text{prod sobriety}}$)**: linearly penalizes **over-production** (boiler energy waste).
-   $$ r_{\text{sobriété\_prod}} = - B \times \frac{\max(0, P_{\text{boiler}} - P_{\text{demand}})}{P_{\text{ref}}} $$
+   
+   $$ r_{\text{prod\_sobriety}} = - B \times \frac{\max(0, P_{\text{boiler}} - P_{\text{demand}})}{P_{\text{ref}}} $$
 
 3. **Pumping sobriety ($r_{\text{pump sobriety}}$)**: penalizes deviation from **nominal power** (quadratic) and adds a linear penalty for any excess beyond nominal. This encourages the pump to work around its optimal operating point.
-   $$ r_{\text{sobriété\_pompe}} = - C \times \left[ \left(\frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right)^2 + \max\left(0, \frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right) \right] $$
+   
+   $$ r_{\text{pump\_sobriety}} = - C \times \left[ \left(\frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right)^2 + \max\left(0, \frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right) \right] $$
 
 **Current weights (`config.py`):**
 - $A = 1.0$ (Comfort)
@@ -392,7 +393,7 @@ python evaluate_agent.py
 
 Among all trained models and tested configurations, the curves below were produced with the most "performant" one.
 
-On the 4 graphs below, we notice x interesting things:
+On the 4 graphs below, we notice 4 interesting things:
 - The supplied power is half the demand, **the model is therefore terrible** (even if it is the best I managed to obtain). Is the coefficient of the reward function concerning the comfort criterion too low? After a few trials, I am not convinced that it is solely linked to that.
 - The initial network temperature being `min_return_temp = 40 °C`, we observe that **the agent has learned to manage the transient regime** (from $t=0$ to $t=3h$).
 - The value of the mass flow rate around which the model stabilizes is not insignificant: it is the nominal value of the pump. Since the reward function penalizes the use of the pump at points other than its nominal point, the model has learned to **stabilize at this nominal operating point**. Note that the model **deviates from this rule for the initial transient phase**, where using the pump at a higher regime is less penalized than the power difference.
