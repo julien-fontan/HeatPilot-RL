@@ -2,6 +2,8 @@
 
 Ce projet est un environnement de recherche simulant la physique d'un réseau de chaleur urbain (District Heating Network) couplé à un agent d'intelligence artificielle (Reinforcement Learning) dont le but est d'optimiser la production de chaleur.
 
+> **Note :** Ce projet n'a potentiellement que très peu d'intérêt pour la gestion seule d'un réseau de chaleur classique. Toutefois, cette approche peut être très pertinente dans le cas où on peut piloter des moyens de stockage de la chaleur, des moyens de productions intermittents (solaire thermique), ou de la récupération de chaleur fatale dans une usine.
+
 Ce document a pour but d'expliquer :
 - comment fonctionne le simulateur,
 - quelles sont les équations et hypothèses physiques,

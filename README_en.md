@@ -2,6 +2,8 @@
 
 This project is a research environment simulating the physics of a District Heating Network (DHN) coupled with an Artificial Intelligence (Reinforcement Learning) agent aimed at optimizing heat production.
 
+> **Note:** This project may have very little interest for the sole management of a classic district heating network. However, this approach can be very relevant when controlling heat storage means, intermittent production means (solar thermal), or waste heat recovery in a factory.
+
 This document aims to explain:
 - how the simulator works,
 - what are the physical equations and assumptions,
