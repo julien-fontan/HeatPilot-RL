@@ -14,24 +14,24 @@ class HeatNetworkEnv(gym.Env):
         super(HeatNetworkEnv, self).__init__()
 
         # --- Paramètres de Simulation ---
-        self.dt = config.RL_TRAINING["dt"]                             # Pas de temps de contrôle (s), côté RL
+        self.dt = config.TRAINING_PARAMS["dt"]                             # Pas de temps de contrôle (s), côté RL
         self.t_max = config.SIMULATION_PARAMS["t_max_day"]             # Une journée
         self.dx = config.SIMULATION_PARAMS["dx"]
-        self.max_steps = config.RL_TRAINING["episode_length_steps"]    # Horizon complet = t_max_day / dt
+        self.max_steps = config.TRAINING_PARAMS["episode_length_steps"]    # Horizon complet = t_max_day / dt
 
         self.props = config.PHYSICAL_PROPS
 
         # --- Contraintes Physiques ---
-        self.temp_min = config.CONTROL_LIMITS["temp_min"]
-        self.temp_max = config.CONTROL_LIMITS["temp_max"]
-        self.flow_min = config.CONTROL_LIMITS["flow_min"]
-        self.flow_max = config.CONTROL_LIMITS["flow_max"]
+        self.temp_min = config.CONTROL_PARAMS["temp_min"]
+        self.temp_max = config.CONTROL_PARAMS["temp_max"]
+        self.flow_min = config.CONTROL_PARAMS["flow_min"]
+        self.flow_max = config.CONTROL_PARAMS["flow_max"]
         
         # Variation max par pas de temps
-        self.max_temp_rise = config.CONTROL_LIMITS["max_temp_rise_per_dt"]
-        self.max_temp_drop = config.CONTROL_LIMITS["max_temp_drop_per_dt"]
-        self.max_flow_var = config.CONTROL_LIMITS["max_flow_delta_per_dt"]
-        self.enable_ramps = config.CONTROL_LIMITS.get("enable_ramps", True)
+        self.max_temp_rise = config.CONTROL_PARAMS["max_temp_rise_per_dt"]
+        self.max_temp_drop = config.CONTROL_PARAMS["max_temp_drop_per_dt"]
+        self.max_flow_var = config.CONTROL_PARAMS["max_flow_delta_per_dt"]
+        self.enable_ramps = config.CONTROL_PARAMS.get("enable_ramps", True)
 
         # --- Analyse de la Topologie ---
         self.edges = config.EDGES
@@ -74,8 +74,8 @@ class HeatNetworkEnv(gym.Env):
         self.current_t = 0.0
         self.demand_funcs = {}  # node_id -> f(t)
         
-        self.actual_inlet_temp = config.INITIAL_CONDITIONS["initial_temp"]
-        self.actual_mass_flow = config.INITIAL_CONDITIONS["initial_flow"]
+        self.actual_inlet_temp = config.SIMULATION_PARAMS["initial_temp"]
+        self.actual_mass_flow = config.SIMULATION_PARAMS["initial_flow"]
 
         # suivi des puissances au dernier pas
         self.last_total_p_demand = 0.0
@@ -134,10 +134,10 @@ class HeatNetworkEnv(gym.Env):
         # 3. Construire le réseau
         self.network = DistrictHeatingNetwork(
             pipes=pipes_list,
-            inlet_mass_flow=config.INITIAL_CONDITIONS["initial_flow"],
+            inlet_mass_flow=config.SIMULATION_PARAMS["initial_flow"],
             node_splits={},
             graph=self.graph,
-            inlet_temp=config.INITIAL_CONDITIONS["initial_temp"],
+            inlet_temp=config.SIMULATION_PARAMS["initial_temp"],
             rho=self.props["rho"],
             cp=self.props["cp"],
             node_power_funcs=self.demand_funcs,
@@ -145,10 +145,10 @@ class HeatNetworkEnv(gym.Env):
         )
 
         # 4. Initialisation état
-        self.state = np.full(self.network.total_cells, config.INITIAL_CONDITIONS["initial_temp"])
+        self.state = np.full(self.network.total_cells, config.SIMULATION_PARAMS["initial_temp"])
         self.current_t = 0.0
-        self.actual_inlet_temp = config.INITIAL_CONDITIONS["initial_temp"]
-        self.actual_mass_flow = config.INITIAL_CONDITIONS["initial_flow"]
+        self.actual_inlet_temp = config.SIMULATION_PARAMS["initial_temp"]
+        self.actual_mass_flow = config.SIMULATION_PARAMS["initial_flow"]
         
         self.last_total_p_demand = 0.0
         self.last_total_p_supplied = 0.0
@@ -292,7 +292,7 @@ class HeatNetworkEnv(gym.Env):
 
         # --- Calcul de la récompense (Policy) ---
         # Paramètres depuis config
-        rc = config.REWARD_CONFIG
+        rc = config.REWARD_PARAMS
         w = rc["weights"]
         p = rc["params"]
         

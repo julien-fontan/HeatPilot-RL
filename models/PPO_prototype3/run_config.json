@@ -1,5 +1,5 @@
 {
-    "RL_TRAINING": {
+    "TRAINING_PARAMS": {
         "dt": 10,
         "total_timesteps": 1728000,
         "episode_length_steps": 8640,
@@ -16,7 +16,7 @@
         "atol": 0.0001,
         "warmup": 10800
     },
-    "CONTROL_LIMITS": {
+    "CONTROL_PARAMS": {
         "temp_min": 50.0,
         "temp_max": 120.0,
         "flow_min": 3.0,
@@ -38,11 +38,11 @@
         "thermal_conductivity": 0.0,
         "external_temp": 10.0
     },
-    "INITIAL_CONDITIONS": {
+    "SIMULATION_PARAMS": {
         "initial_temp": 40.0,
         "initial_flow": 20.0
     },
-    "REWARD_CONFIG": {
+    "REWARD_PARAMS": {
         "weights": {
             "comfort": 10.0,
             "boiler": 14.0,
@@ -97,7 +97,7 @@
     ],
     "GLOBAL_SEED": 42,
     "MIN_RETURN_TEMP": 40.0,
-    "PIPE_GENERATION": {
+    "PHYSICAL_PROPS": {
         "length_min": 50.0,
         "length_max": 300.0,
         "diameter_min": 0.15,

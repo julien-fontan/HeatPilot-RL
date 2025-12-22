@@ -243,7 +243,7 @@ Ces bornes (`max_temp_rise_per_dt`, `max_temp_drop_per_dt`) empêchent l'agent d
 
 ### 4.4. Fonction de coût / récompense
 
-La récompense est construite pour équilibrer le confort thermique et la sobriété énergétique. Elle est définie dans `config.py` (`REWARD_CONFIG`) et calculée à chaque pas de temps.
+La récompense est construite pour équilibrer le confort thermique et la sobriété énergétique. Elle est définie dans `config.py` (`REWARD_PARAMS`) et calculée à chaque pas de temps.
 
 $$\text{Reward} = r_{\text{confort}} + r_{\text{sobriété chaudière}} + r_{\text{sobriété pompe}}$$
 

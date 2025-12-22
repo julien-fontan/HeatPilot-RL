@@ -2,7 +2,7 @@ import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
 from graph_utils import Graph
-from config import MIN_RETURN_TEMP, PIPE_GENERATION
+from config import PHYSICAL_PROPS, SIMULATION_PARAMS
 
 class Pipe:
     """
@@ -11,10 +11,7 @@ class Pipe:
     """
 
     @staticmethod
-    def generate_parameters(edges, dx, seed,
-                            length_min=None, length_max=None,
-                            diameter_min=None, diameter_max=None,
-                            heat_loss_coeff_min=None, heat_loss_coeff_max=None):
+    def generate_parameters(edges, dx, seed):
         """
         Génère de façon reproductible les paramètres géométriques des conduites
         pour une liste d'arêtes `edges` et un `seed` donné.
@@ -30,34 +27,22 @@ class Pipe:
             h_vals    : np.ndarray de coefficients de pertes (W/m/K) ou équivalent
         """
         # Valeurs par défaut depuis la config globale
-        if length_min is None:
-            length_min = PIPE_GENERATION["length_min"]
-        if length_max is None:
-            length_max = PIPE_GENERATION["length_max"]
-        if diameter_min is None:
-            diameter_min = PIPE_GENERATION["diameter_min"]
-        if diameter_max is None:
-            diameter_max = PIPE_GENERATION["diameter_max"]
-        if heat_loss_coeff_min is None:
-            heat_loss_coeff_min = PIPE_GENERATION["heat_loss_coeff_min"]
-        if heat_loss_coeff_max is None:
-            heat_loss_coeff_max = PIPE_GENERATION["heat_loss_coeff_max"]
+        length_min = PHYSICAL_PROPS["length_min"]
+        length_max = PHYSICAL_PROPS["length_max"]
+        diameter_min = PHYSICAL_PROPS["diameter_min"]
+        diameter_max = PHYSICAL_PROPS["diameter_max"]
+        heat_loss_coeff_min = PHYSICAL_PROPS["heat_loss_coeff_min"]
+        heat_loss_coeff_max = PHYSICAL_PROPS["heat_loss_coeff_max"]
 
         rng = np.random.default_rng(seed)
         n_pipes = len(edges)
 
-        # Longueurs physiques tirées entre length_min et length_max
-        lengths = rng.uniform(length_min, length_max, size=n_pipes)
-
-        # Nombre de segments déduit de la longueur et de dx
-        n_segments = np.rint(lengths / dx).astype(int)
-        # On impose au moins 2 cellules par conduite pour que la physique fonctionne
-        n_segments = np.maximum(n_segments, 2)
-
-        # Mise à jour cohérente des longueurs (cas où round(...) * dx != length tirée)
-        lengths = n_segments * dx
-
         diameters = rng.uniform(diameter_min, diameter_max, size=n_pipes)
+        lengths = rng.uniform(length_min, length_max, size=n_pipes)
+        n_segments = np.rint(lengths / dx).astype(int)  # Nombre de segments déduit de la longueur et de dx
+        n_segments = np.maximum(n_segments, 2)          # On impose au moins 2 cellules par conduite pour que la physique fonctionne
+        lengths = n_segments * dx                       # Mise à jour cohérente des longueurs (cas où round(...) * dx != length tirée)
+
         h_vals = rng.uniform(heat_loss_coeff_min, heat_loss_coeff_max, size=n_pipes)
 
         return lengths, diameters, n_segments, h_vals
@@ -65,10 +50,10 @@ class Pipe:
     def __init__(self, nodes, length, diameter, dx,
                  rho, cp, heat_loss_coeff, thermal_conductivity, external_temp):
         """
-        nodes  : (u, v) identifiants des noeuds amont/aval.
-        length : longueur totale de la conduite (m).
+        nodes    : (u,v) identifiants des noeuds amont/aval.
+        length   : longueur totale de la conduite (m).
         diameter : diamètre intérieur (m).
-        dx     : taille spatiale d'une cellule (m).
+        dx       : taille spatiale d'une cellule (m).
         rho, cp, heat_loss_coeff, thermal_conductivity, external_temp : paramètres physiques.
         """
         self.nodes = nodes
@@ -94,7 +79,7 @@ class Pipe:
 
     def compute_derivatives(self, t, T, mass_flow, inlet_temp, dT_dt):
         """
-        Calcule in-place les dérivées temporelles dT_dt pour toutes les cellules.
+        Calcule en place les dérivées temporelles dT_dt pour toutes les cellules.
 
         t          : temps courant (s).
         T          : température dans les cellules (vecteur 1D).
@@ -107,20 +92,20 @@ class Pipe:
         T_ext = ext_temp(t) if callable(ext_temp) else ext_temp
         rho = self.rho
 
-        if mass_flow >= 0:  # Flux positif (Forward)
-            # Cellule 0 (Entrée)
+        if mass_flow >= 0:  # Sens normal
+            # Cellule 0 (entrée)
             dT_dt[0] = -(mass_flow / (self.dx * rho * self.area)) * (T[0] - inlet_temp) - self.loss_factor * (T[0] - T_ext)
             # Cellules internes (1 à N-1)
             # dT/dt = -u * (T[i] - T[i-1])/dx
             dT_dt[1:] = -(mass_flow / (self.dx * rho * self.area)) * (T[1:] - T[:-1]) - self.loss_factor * (T[1:] - T_ext)
-        else:   # Flux négatif (Backward)
+        else:   # Sens inverse
             # Cellules internes (0 à N-2)
             # dT/dt = -u * (T[i] - T[i+1])/dx  (attention u est négatif, donc -u > 0)
             dT_dt[:-1] = -(mass_flow / (self.dx * rho * self.area)) * (T[:-1] - T[1:]) - self.loss_factor * (T[:-1] - T_ext)
-            # Cellule N-1 (Entrée du flux inverse)
+            # Cellule N-1 (entrée du flux inverse)
             dT_dt[-1] = -(mass_flow / (self.dx * rho * self.area)) * (T[-1] - inlet_temp) - self.loss_factor * (T[-1] - T_ext)
 
-        # Diffusion (Optionnel, souvent nul)
+        # Diffusion (optionnel, souvent nul)
         if self.diffusivity > 0:
             k = self.diffusivity / (self.dx**2)
             diffusion = np.zeros_like(T)
@@ -140,12 +125,9 @@ class DistrictHeatingNetwork:
     - (optionnel) applique des soutirages de puissance au niveau des noeuds consommateurs.
     """
 
-    def __init__(self, pipes: list,
-                 inlet_temp=70, inlet_mass_flow=10, node_splits=None,
-                 graph: Graph = None,
-                 rho=1000.0, cp=4182.0,
-                 node_power_funcs=None,
-                 t_min_return: float = MIN_RETURN_TEMP):
+    def __init__(self, graph, pipes,
+                 t_min_return, inlet_temp, inlet_mass_flow, rho, cp,
+                 node_splits=None, node_power_funcs=None):
         """
         pipes            : liste d'objets Pipe.
         inlet_mass_flow  : débit massique en entrée (constante ou fonction(t)).

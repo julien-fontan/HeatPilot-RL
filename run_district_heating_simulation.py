@@ -1,32 +1,30 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from district_heating_model import Pipe, DistrictHeatingNetwork
 from utils import generate_step_function, generate_smooth_profile
 from graph_utils import Graph
 from config import (
+    GLOBAL_SEED,
     EDGES,
     PHYSICAL_PROPS,
     SIMULATION_PARAMS,
-    GLOBAL_SEED,
     POWER_PROFILE_CONFIG,
-    MIN_RETURN_TEMP,
-    PIPE_GENERATION,
-    RL_TRAINING,
+    TRAINING_PARAMS,
 )
-import os  # ajout pour gérer le chemin absolu des plots
 
-# Dossier pour stocker tous les plots (chemin absolu basé sur ce fichier)
+# Dossier pour stocker tous les plots
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PLOTS_DIR = os.path.join(BASE_DIR, "plots")
 os.makedirs(PLOTS_DIR, exist_ok=True)
 
 def run_simulation():
+    seed = GLOBAL_SEED
     edges = EDGES
     props = PHYSICAL_PROPS
     dx = SIMULATION_PARAMS["dx"]
     t_max_day = SIMULATION_PARAMS["t_max_day"]
-    dt = RL_TRAINING["dt"]       # pas temporel utilisé pour l’échantillonnage des courbes
-    seed = GLOBAL_SEED  # même graine que le RL, pour cohérence globale
+    dt = TRAINING_PARAMS["dt"]       # pas temporel utilisé pour l’échantillonnage des courbes
 
     # durée de pré-chauffe (warmup) pour dépasser le transitoire initial
     warmup_duration = SIMULATION_PARAMS["warmup"]
@@ -40,12 +38,12 @@ def run_simulation():
         edges=edges,
         dx=dx,
         seed=seed,
-        # n_segments_min=PIPE_GENERATION["n_segments_min"],   # facultatif
-        # n_segments_max=PIPE_GENERATION["n_segments_max"],
-        # diameter_min=PIPE_GENERATION["diameter_min"],
-        # diameter_max=PIPE_GENERATION["diameter_max"],
-        # heat_loss_coeff_min=PIPE_GENERATION["heat_loss_coeff_min"],
-        # heat_loss_coeff_max=PIPE_GENERATION["heat_loss_coeff_max"],
+        # n_segments_min=PHYSICAL_PROPS["n_segments_min"],   # facultatif
+        # n_segments_max=PHYSICAL_PROPS["n_segments_max"],
+        # diameter_min=PHYSICAL_PROPS["diameter_min"],
+        # diameter_max=PHYSICAL_PROPS["diameter_max"],
+        # heat_loss_coeff_min=PHYSICAL_PROPS["heat_loss_coeff_min"],
+        # heat_loss_coeff_max=PHYSICAL_PROPS["heat_loss_coeff_max"],
     )
 
     pipes_list = []
@@ -97,6 +95,7 @@ def run_simulation():
         rho=props["rho"],
         cp=props["cp"],
         node_power_funcs=node_power_funcs,
+        t_min_return=SIMULATION_PARAMS["min_return_temp"]
     )
 
     # --- État initial froid ---

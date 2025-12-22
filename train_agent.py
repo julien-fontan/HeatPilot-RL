@@ -1,4 +1,3 @@
-import gymnasium as gym
 import numpy as np
 import os
 import json
@@ -86,21 +85,18 @@ def _find_latest_model_in_dir(directory: str, run_name: str) -> str | None:
     return os.path.join(directory, best_fname[:-4])
 
 def save_run_config(directory: str, config_module):
-    """Sauvegarde les paramètres critiques de config.py dans un JSON."""
+    """Sauvegarde les paramètres de config.py dans un JSON."""
     data = {
-        "RL_TRAINING": config_module.RL_TRAINING,
-        "SIMULATION_PARAMS": config_module.SIMULATION_PARAMS,
-        "CONTROL_LIMITS": config_module.CONTROL_LIMITS,
-        "POWER_PROFILE_CONFIG": config_module.POWER_PROFILE_CONFIG,
-        "PHYSICAL_PROPS": config_module.PHYSICAL_PROPS,
-        "INITIAL_CONDITIONS": config_module.INITIAL_CONDITIONS,
-        "REWARD_CONFIG": config_module.REWARD_CONFIG,
+        "GLOBAL_SEED": config_module.GLOBAL_SEED,
+        "EDGES": config_module.EDGES,
         # EDGES est une liste de tuples, JSON le transformera en liste de listes.
         # Il faudra le reconvertir au chargement.
-        "EDGES": config_module.EDGES, 
-        "GLOBAL_SEED": config_module.GLOBAL_SEED,
-        "MIN_RETURN_TEMP": config_module.MIN_RETURN_TEMP,
-        "PIPE_GENERATION": config_module.PIPE_GENERATION
+        "PHYSICAL_PROPS": config_module.PHYSICAL_PROPS,
+        "SIMULATION_PARAMS": config_module.SIMULATION_PARAMS,
+        "POWER_PROFILE_CONFIG": config_module.POWER_PROFILE_CONFIG,
+        "CONTROL_PARAMS": config_module.CONTROL_PARAMS,
+        "TRAINING_PARAMS": config_module.TRAINING_PARAMS,
+        "REWARD_PARAMS": config_module.REWARD_PARAMS,
     }
     path = os.path.join(directory, "run_config.json")
     with open(path, 'w') as f:
@@ -120,16 +116,13 @@ def load_and_patch_config(directory: str):
     print(f"Chargement de la configuration depuis {path}...")
     
     # Patching du module config
-    config.RL_TRAINING = data["RL_TRAINING"]
-    config.SIMULATION_PARAMS = data["SIMULATION_PARAMS"]
-    config.CONTROL_LIMITS = data["CONTROL_LIMITS"]
-    config.POWER_PROFILE_CONFIG = data["POWER_PROFILE_CONFIG"]
-    config.PHYSICAL_PROPS = data["PHYSICAL_PROPS"]
-    config.INITIAL_CONDITIONS = data["INITIAL_CONDITIONS"]
-    config.REWARD_CONFIG = data["REWARD_CONFIG"]
     config.GLOBAL_SEED = data["GLOBAL_SEED"]
-    config.MIN_RETURN_TEMP = data["MIN_RETURN_TEMP"]
-    config.PIPE_GENERATION = data["PIPE_GENERATION"]
+    config.PHYSICAL_PROPS = data["PHYSICAL_PROPS"]
+    config.SIMULATION_PARAMS = data["SIMULATION_PARAMS"]
+    config.POWER_PROFILE_CONFIG = data["POWER_PROFILE_CONFIG"]
+    config.CONTROL_PARAMS = data["CONTROL_PARAMS"]
+    config.TRAINING_PARAMS = data["TRAINING_PARAMS"]
+    config.REWARD_PARAMS = data["REWARD_PARAMS"]
     
     # Reconversion de EDGES (liste de listes -> liste de tuples)
     edges_list = data["EDGES"]
@@ -191,11 +184,11 @@ def train():
         save_run_config(run_dir, config)
 
     # Paramètres après patching éventuel
-    episode_length = config.RL_TRAINING["episode_length_steps"]
-    n_steps = config.RL_TRAINING["n_steps_update"]
-    total_timesteps = config.RL_TRAINING["total_timesteps"]
-    use_s3 = config.RL_TRAINING.get("use_s3_checkpoints", False)
-    normalize_env = config.RL_TRAINING.get("normalize_env", True)
+    episode_length = config.TRAINING_PARAMS["episode_length_steps"]
+    n_steps = config.TRAINING_PARAMS["n_steps_update"]
+    total_timesteps = config.TRAINING_PARAMS["total_timesteps"]
+    use_s3 = config.TRAINING_PARAMS.get("use_s3_checkpoints", False)
+    normalize_env = config.TRAINING_PARAMS.get("normalize_env", True)
     
     np.random.seed(config.GLOBAL_SEED)
     
@@ -209,7 +202,7 @@ def train():
         print("Environnement normalisé (VecNormalize).")
 
     # Callback
-    save_freq_episodes = config.RL_TRAINING["save_freq_episodes"]
+    save_freq_episodes = config.TRAINING_PARAMS["save_freq_episodes"]
     save_freq_steps = save_freq_episodes * episode_length
     
     callback = SaveAndEvalCallback(
@@ -243,12 +236,12 @@ def train():
         
         # Force params
         model.n_steps = n_steps
-        model.learning_rate = config.RL_TRAINING["learning_rate"]
+        model.learning_rate = config.TRAINING_PARAMS["learning_rate"]
         start_timesteps = model.num_timesteps
     else:
         print(f"Création d'un nouveau modèle PPO dans {run_dir}")
         # Récupération du coeff d'entropie depuis la config, défaut à 0.01 si absent
-        ent_coef = config.RL_TRAINING.get("ent_coef", 0.01)
+        ent_coef = config.TRAINING_PARAMS.get("ent_coef", 0.01)
         
         model = PPO(
             "MlpPolicy",
@@ -256,7 +249,7 @@ def train():
             n_steps=n_steps,
             batch_size=64,
             verbose=1,
-            learning_rate=config.RL_TRAINING["learning_rate"],
+            learning_rate=config.TRAINING_PARAMS["learning_rate"],
             seed=config.GLOBAL_SEED,
             gamma=0.995,
             gae_lambda=0.98,

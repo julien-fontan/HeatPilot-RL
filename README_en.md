@@ -241,7 +241,7 @@ These bounds (`max_temp_rise_per_dt`, `max_temp_drop_per_dt`) prevent the agent 
 
 ### 4.4. Cost / reward function
 
-The reward is built to balance thermal comfort and energy sobriety. It is defined in `config.py` (`REWARD_CONFIG`) and calculated at each time step.
+The reward is built to balance thermal comfort and energy sobriety. It is defined in `config.py` (`REWARD_PARAMS`) and calculated at each time step.
 
 $$\text{Reward} = r_{\text{comfort}} + r_{\text{boiler sobriety}} + r_{\text{pump sobriety}}$$
 
