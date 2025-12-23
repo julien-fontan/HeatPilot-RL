@@ -1,15 +1,17 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import sys
+
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from district_heating_gym_env import HeatNetworkEnv
 import config
 
-# --- CONFIGURATION ---
-MODEL_SUBDIR = "PPO_test6"
-MODEL_ITER = 1900800
-# ---------------------
+# --- CONFIGURATION UTILISATEUR ---
+MODEL_SUBDIR = "PPO_test7_rampes"  # Nom du dossier dans 'models'
+MODEL_ITER = None                  # None = prend le dernier checkpoint, ou un entier (ex: 3456000)
+# ---------------------------------
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODELS_ROOT_DIR = os.path.join(BASE_DIR, "models")
@@ -44,143 +46,206 @@ def find_model_path(subdir, iteration=None):
     return os.path.join(run_dir, f"{subdir}_{best_iter}"), best_iter
 
 def main():
+    # 1. Chargement du modèle
     if not MODEL_SUBDIR:
         print("Erreur: MODEL_SUBDIR requis.")
         return
 
     try:
         model_path, iteration = find_model_path(MODEL_SUBDIR, MODEL_ITER)
-        print(f"Modèle : {model_path}.zip (iter {iteration})")
+        print(f" Chargement : {model_path}.zip")
     except FileNotFoundError as e:
         print(e)
         return
 
     run_dir = os.path.dirname(model_path)
-    cache_file = os.path.join(run_dir, f"eval_data_{MODEL_SUBDIR}_{iteration}.npz")
-    
-    history = {}
-    
-    if os.path.exists(cache_file):
-        print(f"Chargement cache : {os.path.basename(cache_file)}")
-        data = np.load(cache_file, allow_pickle=True)
-        for k in data.files: history[k] = data[k]
+
+    # 2. Préparation de l'environnement
+    env = HeatNetworkEnv()
+    env = DummyVecEnv([lambda: env]) # Encapsulation standard SB3
+
+    # Chargement des statistiques de normalisation (CRUCIAL)
+    norm_path = os.path.join(run_dir, f"vec_normalize_{MODEL_SUBDIR}_{iteration}.pkl")
+    if os.path.exists(norm_path):
+        print(f" Chargement VecNormalize : {os.path.basename(norm_path)}")
+        env = VecNormalize.load(norm_path, env)
+        env.training = False     # Mode test : on ne met plus à jour les moyennes
+        env.norm_reward = False  # On veut voir les rewards réels
     else:
-        print("Lancement évaluation...")
-        
-        # Création Env
-        env = HeatNetworkEnv()
-        env = DummyVecEnv([lambda: env])
-        
-        # Chargement Normalisation
-        norm_path = os.path.join(run_dir, f"vec_normalize_{MODEL_SUBDIR}_{iteration}.pkl")
-        if os.path.exists(norm_path):
-            print(f"Normalisation chargée : {os.path.basename(norm_path)}")
-            env = VecNormalize.load(norm_path, env)
-            env.training = False
-            env.norm_reward = False
-        
-        model = PPO.load(model_path)
-        
-        obs = env.reset()
-        
-        # Buffers
-        t_list, T_in_list, m_flow_list, rew_list = [], [], [], []
-        p_dem_list, p_sup_list = [], []
-        cons_temps_list = []
-        
-        real_env = env.envs[0].unwrapped
-        
-        print("Simulation épisode...")
-        while True:
-            action, _ = model.predict(obs, deterministic=True)
-            obs, reward, done_array, _ = env.step(action)
-            
-            real_env = env.envs[0].unwrapped
-            
-            t_list.append(real_env.current_t)
-            T_in_list.append(real_env.actual_inlet_temp)
-            m_flow_list.append(real_env.actual_mass_flow)
-            rew_list.append(reward[0])
-            p_dem_list.append(real_env.last_total_p_demand)
-            p_sup_list.append(real_env.last_total_p_supplied)
-            
-            # --- Extraction Températures Consommateurs ---
-            # Avec le moteur vectorisé, on doit récupérer la dernière cellule du bon pipe
-            temps = []
-            parents_map = real_env.graph.get_parent_nodes()
-            # On recalcule les températures nodales actuelles pour être précis
-            # (step() les a calculées mais on ne les a pas directement dans l'attribut public simple)
-            # Option plus simple: utiliser les indices du graph comme dans _get_obs
-            
-            # Pour l'évaluation graphique, on veut la température T_out du fluide qui arrive au consommateur
-            # C'est la dernière cellule du pipe d'entrée.
-            for node_id in real_env.consumer_nodes:
-                parents = parents_map.get(node_id, [])
-                if parents:
-                    p_node = parents[0]
-                    edge = real_env.graph.edges[(p_node, node_id)]
-                    pipe_idx = edge["pipe_index"]
-                    # Slice du pipe
-                    sl = real_env.network.pipe_slices[pipe_idx]
-                    # Dernière cellule
-                    idx_last_cell = sl.stop - 1
-                    T_val = real_env.state[idx_last_cell]
-                    temps.append(T_val)
-                else:
-                    temps.append(20.0)
-            
-            cons_temps_list.append(temps)
+        print(" ATTENTION : Pas de fichier VecNormalize trouvé. Les résultats risquent d'être incohérents.")
 
-            if done_array[0]: break
-        
-        history["time"] = np.array(t_list)[:-1]
-        history["T_inlet"] = np.array(T_in_list)[:-1]
-        history["mass_flow"] = np.array(m_flow_list)[:-1]
-        history["rewards"] = np.array(rew_list)[:-1]
-        history["consumer_temps"] = np.array(cons_temps_list)[:-1]
-        history["p_demand"] = np.array(p_dem_list)[:-1]
-        history["p_supplied"] = np.array(p_sup_list)[:-1]
-        
-        np.savez(cache_file, **history)
-        print("Données sauvegardées.")
-
-    # --- Plotting ---
-    t_h = history["time"] / 3600.0
+    model = PPO.load(model_path)
     
-    plt.figure(figsize=(10, 10))
+    # On récupère l'environnement physique pour accéder à la topologie statique
+    real_env = env.envs[0].unwrapped
     
-    plt.subplot(4, 1, 1)
-    plt.plot(t_h, history["T_inlet"], label="T source")
-    # Plot moyenne consommateurs
-    T_cons_mean = np.mean(history["consumer_temps"], axis=1)
-    plt.plot(t_h, T_cons_mean, label="T mean consumers", alpha=0.7)
-    plt.ylabel("Temp (°C)")
-    plt.legend()
-    plt.grid(True)
-    plt.title(f"Evaluation: {MODEL_SUBDIR} (iter {iteration})")
+    # 3. Structures de données pour l'historique
+    history = {
+        "time": [], "T_inlet": [], "m_inlet": [], 
+        "demand_total": [], "supplied_total": []
+    }
+    
+    # Historique par consommateur
+    consumer_nodes = real_env.consumer_nodes
+    nodes_hist = {nid: {"T_in": [], "m_in": [], "p_dem": [], "p_sup": []} for nid in consumer_nodes}
+    
+    # Historique des vannes (Splits)
+    branching_nodes = real_env.branching_nodes
+    split_hist = {} 
 
-    plt.subplot(4, 1, 2)
-    plt.plot(t_h, history["mass_flow"], color="orange")
-    plt.ylabel("Flow (kg/s)")
-    plt.grid(True)
+    # Reset
+    obs = env.reset()
+    
+    # Pré-calcul des index de tuyaux entrants pour chaque nœud (pour sommer les débits rapidement)
+    parents_map = real_env.graph.get_parent_nodes()
+    incoming_pipes_cache = {}
+    for nid in consumer_nodes:
+        incoming_pipes_cache[nid] = []
+        for p_node in parents_map.get(nid, []):
+            edge = real_env.network.graph.edges[(p_node, nid)]
+            incoming_pipes_cache[nid].append(edge["pipe_index"])
 
-    plt.subplot(4, 1, 3)
-    plt.plot(t_h, history["p_demand"]/1e3, "k--", label="Demand")
-    plt.plot(t_h, history["p_supplied"]/1e3, "g", label="Supplied")
-    plt.ylabel("Power (kW)")
-    plt.legend()
-    plt.grid(True)
+    print(" Simulation en cours...")
+    while True:
+        action, _ = model.predict(obs, deterministic=True)
+        
+        # --- ETAPE PRINCIPALE ---
+        # On récupère 'infos' qui contient les calculs physiques faits dans step()
+        obs, rewards, dones, infos = env.step(action)
+        
+        if dones[0]: 
+            break
+        
+        # infos est une liste (car VecEnv), on prend le premier élément
+        info = infos[0]
+        
+        # --- EXTRACTION DES DONNÉES (Via INFO) ---
+        # On suppose que vous avez ajouté "pipe_mass_flows" et "node_temperatures" dans le dict info de step()
+        try:
+            pipe_flows = info["pipe_mass_flows"]
+            node_temps = info["node_temperatures"]
+        except KeyError:
+            print("ERREUR: Le dictionnaire 'info' ne contient pas 'pipe_mass_flows' ou 'node_temperatures'.")
+            print("Vérifiez que vous avez bien modifié district_heating_gym_env.py pour inclure ces données dans le return de step().")
+            sys.exit(1)
 
-    plt.subplot(4, 1, 4)
-    plt.plot(t_h, history["rewards"], color="red", alpha=0.5)
-    plt.ylabel("Reward")
-    plt.xlabel("Time (h)")
-    plt.grid(True)
+        t = real_env.current_t
+        
+        # Stockage Variables Globales
+        history["time"].append(t)
+        history["T_inlet"].append(real_env.actual_inlet_temp)
+        history["m_inlet"].append(real_env.actual_mass_flow)
+        
+        # Pour la demande/fourni total, on peut utiliser les attributs de l'env s'ils sont à jour,
+        # ou les recalculer à partir des données extraites.
+        history["demand_total"].append(real_env.last_total_p_demand)
+        history["supplied_total"].append(real_env.last_total_p_supplied)
 
+        # Stockage Variables Hydrauliques (Splits)
+        # Les splits sont stockés dans le graphe, mis à jour par l'action courante
+        for (u, v), edge_data in real_env.network.graph.edges.items():
+            if u in branching_nodes:
+                key = f"Split {u}->{v}"
+                if key not in split_hist: split_hist[key] = []
+                split_hist[key].append(edge_data.get("split_fraction", 0.0))
+
+        # Stockage Variables Par Nœud (Consommateurs)
+        for nid in consumer_nodes:
+            # 1. Température (directement depuis le vecteur info)
+            node_idx = real_env.graph.get_id_from_node(nid)
+            T_val = node_temps[node_idx]
+            
+            # 2. Débit entrant (somme des vecteurs info)
+            m_in_val = sum(pipe_flows[pidx] for pidx in incoming_pipes_cache[nid])
+            
+            # 3. Puissances (Calcul local rapide)
+            p_dem = real_env.demand_funcs[nid](t)
+            
+            # Calcul du fourni borné par la physique (T_val vient de info)
+            delta_T = max(T_val - config.SIMULATION_PARAMS.get("min_return_temp", 40.0), 0.0)
+            p_sup = min(p_dem, m_in_val * real_env.props["cp"] * delta_T)
+            
+            nodes_hist[nid]["T_in"].append(T_val)
+            nodes_hist[nid]["m_in"].append(m_in_val)
+            nodes_hist[nid]["p_dem"].append(p_dem)
+            nodes_hist[nid]["p_sup"].append(p_sup)
+    
+    print(" Simulation terminée. Génération du Tableau de Bord...")
+    
+    # --- VISUALISATION (DASHBOARD) ---
+    t_h = np.array(history["time"]) / 3600.0
+    
+    # Style
+    try: plt.style.use('seaborn-v0_8-whitegrid')
+    except: pass
+    
+    # Figure avec 5 panneaux verticaux partageant l'axe X
+    fig, axes = plt.subplots(5, 1, figsize=(14, 20), sharex=True)
+    
+    # Palette de couleurs pour distinguer les noeuds
+    colors = plt.cm.tab10(np.linspace(0, 1, len(consumer_nodes)))
+    
+    # 1. ACTIONS SOURCE
+    ax = axes[0]
+    ax.plot(t_h, history["T_inlet"], color='#D62728', linewidth=2, label="T Source (°C)")
+    ax_bis = ax.twinx()
+    ax_bis.plot(t_h, history["m_inlet"], color='#1F77B4', linewidth=2, linestyle='--', label="Flow Source (kg/s)")
+    ax.set_ylabel("Température (°C)", color='#D62728', fontweight='bold')
+    ax_bis.set_ylabel("Débit Massique (kg/s)", color='#1F77B4', fontweight='bold')
+    ax.set_title("1. Actions à la Source (Commandes Agent)", fontsize=12, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    
+    # 2. PERFORMANCE GLOBALE
+    ax = axes[1]
+    dem_tot = np.array(history["demand_total"]) / 1e6 # MW
+    sup_tot = np.array(history["supplied_total"]) / 1e6 # MW
+    ax.fill_between(t_h, dem_tot, sup_tot, color='red', alpha=0.2, label="Déficit Global (Non fourni)")
+    ax.plot(t_h, dem_tot, 'k--', linewidth=1.5, label="Total Demand")
+    ax.plot(t_h, sup_tot, 'g-', linewidth=2, label="Total Supplied")
+    ax.set_ylabel("Puissance (MW)")
+    ax.set_title("2. Bilan de Puissance Global", fontsize=12, fontweight='bold')
+    ax.legend(loc="upper right")
+    ax.grid(True, alpha=0.3)
+
+    # 3. HYDRAULIQUE (SPLITS)
+    ax = axes[2]
+    for key, vals in split_hist.items():
+        ax.plot(t_h, vals, label=key, linewidth=1.5)
+    ax.set_ylabel("Ouverture Vanne [0-1]")
+    ax.set_ylim(-0.05, 1.05)
+    ax.set_title("3. Répartition Hydraulique (Positions Vannes)", fontsize=12, fontweight='bold')
+    ax.legend(loc="lower center", ncol=min(len(split_hist), 4), fontsize='small', bbox_to_anchor=(0.5, -0.35))
+    ax.grid(True, alpha=0.3)
+    
+    # 4. DÉBITS LOCAUX (Par Nœud)
+    ax = axes[3]
+    for i, nid in enumerate(consumer_nodes):
+        ax.plot(t_h, nodes_hist[nid]["m_in"], color=colors[i], label=f"Node {nid}")
+    ax.set_ylabel("Débit Local (kg/s)")
+    ax.set_title("4. Distribution des Débits aux Consommateurs", fontsize=12, fontweight='bold')
+    ax.legend(loc="upper right", fontsize='small', ncol=2)
+    ax.grid(True, alpha=0.3)
+    
+    # 5. CONFORT THERMIQUE (Températures reçues)
+    ax = axes[4]
+    for i, nid in enumerate(consumer_nodes):
+        ax.plot(t_h, nodes_hist[nid]["T_in"], color=colors[i], label=f"Node {nid}", linewidth=1.5)
+    
+    # Ligne T_min retour pour référence
+    t_min_ref = config.SIMULATION_PARAMS.get("min_return_temp", 40.0)
+    ax.axhline(t_min_ref, color='black', linestyle=':', linewidth=2, label="T_min (Retour)")
+    
+    ax.set_ylabel("Température Arrivée (°C)")
+    ax.set_xlabel("Temps de simulation (heures)")
+    ax.set_title("5. Températures reçues par les Consommateurs", fontsize=12, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    
     plt.tight_layout()
-    plot_path = os.path.join(PLOTS_DIR, f"eval_{MODEL_SUBDIR}_{iteration}.png")
-    plt.savefig(plot_path)
-    print(f"Graphique : {plot_path}")
+    
+    # Sauvegarde
+    out_file = os.path.join(PLOTS_DIR, f"dashboard_FULL_{MODEL_SUBDIR}_{iteration}.png")
+    plt.savefig(out_file, dpi=150)
+    print(f" Graphique sauvegardé : {out_file}")
     plt.show()
 
 if __name__ == "__main__":
