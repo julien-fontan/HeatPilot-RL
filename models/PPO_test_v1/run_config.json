@@ -1,0 +1,106 @@
+{
+    "GLOBAL_SEED": 42,
+    "EDGES": [
+        [
+            1,
+            2
+        ],
+        [
+            2,
+            3
+        ],
+        [
+            3,
+            4
+        ],
+        [
+            4,
+            5
+        ],
+        [
+            5,
+            6
+        ],
+        [
+            3,
+            10
+        ],
+        [
+            10,
+            11
+        ],
+        [
+            5,
+            30
+        ],
+        [
+            30,
+            31
+        ],
+        [
+            31,
+            32
+        ]
+    ],
+    "PHYSICAL_PROPS": {
+        "rho": 1000.0,
+        "cp": 4182.0,
+        "thermal_conductivity": 0.0,
+        "external_temp": 10.0,
+        "length_min": 50.0,
+        "length_max": 300.0,
+        "diameter_min": 0.15,
+        "diameter_max": 0.35,
+        "heat_loss_coeff_min": 0.9,
+        "heat_loss_coeff_max": 1.75
+    },
+    "SIMULATION_PARAMS": {
+        "dx": 10,
+        "t_max_day": 86400.0,
+        "rtol": 0.0001,
+        "atol": 0.0001,
+        "warmup": 10800,
+        "min_return_temp": 40.0,
+        "initial_temp": 40.0,
+        "initial_flow": 15.0
+    },
+    "POWER_PROFILE_CONFIG": {
+        "p_min": 100000.0,
+        "p_max": 300000.0,
+        "step_time": 3600.0,
+        "smooth_factor": 1.0,
+        "step_time_steps": 360
+    },
+    "CONTROL_PARAMS": {
+        "temp_min": 50.0,
+        "temp_max": 120.0,
+        "flow_min": 3.0,
+        "flow_max": 30.0,
+        "max_temp_rise_per_dt": 0.5,
+        "max_temp_drop_per_dt": 0.5,
+        "max_flow_delta_per_dt": 0.5,
+        "enable_ramps": false
+    },
+    "TRAINING_PARAMS": {
+        "dt": 10,
+        "total_timesteps": 3456000,
+        "episode_length_steps": 8640,
+        "n_steps_update": 8640,
+        "learning_rate": 5e-05,
+        "ent_coef": 0.01,
+        "save_freq_episodes": 20,
+        "gamma": 0.9995,
+        "use_s3_checkpoints": false
+    },
+    "REWARD_PARAMS": {
+        "weights": {
+            "comfort": 25,
+            "boiler": 14,
+            "pump": 3.5
+        },
+        "params": {
+            "p_ref": 2000.0,
+            "p_pump_nominal": 15.0
+        }
+    }
+}

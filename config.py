@@ -30,7 +30,7 @@ PHYSICAL_PROPS = dict(
 
 # --- Paramètres de discrétisation, conditions initiales de la simulation ---
 # température minimale de retour (utilisée pour le soutirage de puissance et l'état initial)
-_min_return_temp = 40.0      # °C
+_min_return_temp = 40.0                 # °C
 
 SIMULATION_PARAMS = dict(
     dx=10,                              # m, influence énormément la durée de la simulation
@@ -73,14 +73,14 @@ CONTROL_PARAMS = dict(
     max_temp_rise_per_dt=_ramp_up_K_per_min * dt_rl / 60.0,
     max_temp_drop_per_dt=_ramp_down_K_per_min * dt_rl / 60.0,
     max_flow_delta_per_dt=_ramp_flow_kgps_per_min * dt_rl / 60.0,
-    enable_ramps=False,                 # True = applique les rampes physiques, False = changement instantané
+    enable_ramps=True,                 # True = applique les rampes physiques, False = changement instantané
 )
 
 # --- Paramètres d'entraînement RL ---
 _episode_length_steps = int(SIMULATION_PARAMS["t_max_day"] / dt_rl)
 _total_episodes = 400                   # nombre total d'épisodes d'entraînement
 _total_timesteps = _episode_length_steps * _total_episodes
-_n_steps_update = 2048                  # = int(nb_heures*3600 / dt_rl)  = nb_heures de simulation par update
+_n_steps_update = int(24*3600 / dt_rl)  # = nb_heures de simulation par update
 
 TRAINING_PARAMS = dict(
     dt=dt_rl,                           # pas de contrôle explicite RL
@@ -88,19 +88,19 @@ TRAINING_PARAMS = dict(
     episode_length_steps=_episode_length_steps,
     n_steps_update=_n_steps_update,
     learning_rate=5e-5,
-    ent_coef=0.09,                      # Coefficient d'entropie (0.01 -> 0.05 pour forcer l'exploration)
-    save_freq_episodes=5,               # Fréquence de sauvegarde en nombre d'épisodes
+    ent_coef=0.05,                      # Coefficient d'entropie (0.01 -> 0.05 pour forcer l'exploration)
+    save_freq_episodes=20,              # Fréquence de sauvegarde en nombre d'épisodes
+    gamma=0.9995,
     use_s3_checkpoints=False,           # False = uniquement local, True = local + S3
-    normalize_env=True,                 # True peut aider la convergence et l'exploration
 )
 
 # --- Poids de la fonction de récompense ---
 # configuration alignée avec reward_plot.py
 REWARD_PARAMS = dict(
     weights=dict(
-        comfort=25,                     # Coeff A (Linéaire)
-        boiler=14,                      # Coeff B (Sobriété Boiler)
-        pump=3.5                        # Coeff C (Sobriété Pompage)
+        comfort=10,                     # Coeff A (Linéaire)
+        boiler=0.1,                     # Coeff B (Sobriété Boiler)
+        pump=1                          # Coeff C (Sobriété Pompage)
     ),
     params=dict(
         p_ref=2000.0,                   # Puissance de référence (kW)
