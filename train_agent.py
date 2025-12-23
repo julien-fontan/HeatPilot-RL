@@ -10,6 +10,7 @@ from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.logger import configure
 
 # Imports du projet
 from district_heating_gym_env import HeatNetworkEnv
@@ -244,7 +245,8 @@ def train():
             ent_coef=config.TRAINING_PARAMS.get("ent_coef", 0.01),
             device="auto"
         )
-
+    new_logger = configure(run_dir, ["stdout", "csv", "tensorboard"])
+    model.set_logger(new_logger)
     # 5. Entraînement
     print(f"Démarrage Learn (Total Timesteps: {total_timesteps})...")
     try:
