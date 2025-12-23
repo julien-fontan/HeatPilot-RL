@@ -46,22 +46,27 @@ class HeatNetworkEnv(gym.Env):
         self.inlet_node = self.graph.get_inlet_node()
         self.consumer_nodes = self.graph.get_consumer_nodes()
 
+        # Dimensions pour l'observation
+        self.n_nodes = self.graph.get_nodes_count()
+        self.n_pipes = len(self.edges)
+        self.n_consumers = len(self.consumer_nodes)
+
         # --- Espaces d'Action ---
         # [T_target, Flow_target, Split_1, Split_2...]
         n_actions = 2 + len(self.branching_nodes)
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(n_actions,), dtype=np.float32)
 
-        # --- Espaces d'Observation ---
-        # T_consumers + T_in + Flow_in + Demand_consumers
-        n_obs = len(self.consumer_nodes) + 2 + len(self.consumer_nodes)
+        # --- Espaces d'Observation (Vision Totale) ---
+        # [T_tous_les_noeuds] + [Flow_tous_les_tuyaux] + [Demandes_consommateurs]
         
-        low_obs = np.array([0.0]*len(self.consumer_nodes) + [0.0, 0.0] + [0.0]*len(self.consumer_nodes), dtype=np.float32)
-        high_obs = np.array(
-            [config.CONTROL_PARAMS["temp_max"]] * len(self.consumer_nodes) +           # Températures consommateurs
-            [config.CONTROL_PARAMS["temp_max"], config.CONTROL_PARAMS["flow_max"]] +   # T_inlet et Flow_inlet
-            [config.POWER_PROFILE_CONFIG["p_max"]] * len(self.consumer_nodes),      # Puissances
-            dtype=np.float32
-        )
+        high_obs = np.concatenate([
+            [config.CONTROL_PARAMS["temp_max"]] * self.n_nodes,
+            [config.CONTROL_PARAMS["flow_max"]] * self.n_pipes,
+            [config.POWER_PROFILE_CONFIG["p_max"]] * self.n_consumers
+        ]).astype(np.float32)
+        
+        low_obs = np.full_like(high_obs, 0)
+        
         self.observation_space = spaces.Box(low=low_obs, high=high_obs, dtype=np.float32)
 
         self.network = None
@@ -116,7 +121,10 @@ class HeatNetworkEnv(gym.Env):
                 seed=rng.integers(0, 1_000_000)
             )
 
-        # 3. Construction du Réseau (Vectorisé)
+        # 3. Construction du Réseau
+        # # On initialise avec une température aléatoire chaude pour aider l'apprentissage (Warm Start)
+        # init_temp = rng.uniform(60.0, 80.0) 
+        
         self.network = DistrictHeatingNetwork(
             graph=self.graph,
             pipe_configs=pipe_configs,
@@ -135,8 +143,12 @@ class HeatNetworkEnv(gym.Env):
         self.actual_mass_flow = config.SIMULATION_PARAMS["initial_flow"]
         self.step_count = 0
 
-        return self._get_obs(), {}
+        # Calcul obs initiales (bizarre)
+        pipe_flows = self.network._compute_mass_flows(0.0)
+        node_temps = self.network._solve_nodes_temperature(self.state, pipe_flows, 0.0)
 
+        return self._get_obs(node_temps, pipe_flows), {}
+    
     def step(self, action):
         # --- 1. Décodage de l'action ---
         # Température
@@ -150,13 +162,12 @@ class HeatNetworkEnv(gym.Env):
         # Splits
         split_actions = 0.5 * (action[2:] + 1.0) # -> [0, 1]
 
-        # --- 2. Application des rampes (physique de l'actionneur) ---
+        # --- 2. Application des rampes ---
         if self.enable_ramps:
             # Rampe Température
             delta_T = target_temp - self.actual_inlet_temp
-            if delta_T > self.max_temp_rise: self.actual_inlet_temp += self.max_temp_rise
-            elif delta_T < -self.max_temp_drop: self.actual_inlet_temp -= self.max_temp_drop
-            else: self.actual_inlet_temp = target_temp
+            delta_T = np.clip(delta_T, -self.max_temp_drop, self.max_temp_rise)
+            self.actual_inlet_temp += delta_T
             
             # Rampe Débit
             delta_F = target_flow - self.actual_mass_flow
@@ -180,8 +191,6 @@ class HeatNetworkEnv(gym.Env):
                 node_splits[node] = {children[0]: frac, children[1]: 1.0 - frac}
         
         self.network.set_node_splits(node_splits)
-        
-        # Mise à jour des entrées (Scalaires ici, car constants sur le pas dt=10s)
         self.network.inlet_mass_flow = self.actual_mass_flow
         self.network.inlet_temp = self.actual_inlet_temp
 
@@ -195,37 +204,37 @@ class HeatNetworkEnv(gym.Env):
             atol=config.SIMULATION_PARAMS["atol"]
         )
         
-        # Mise à jour de l'état système
         self.state = sol.y[:, -1]
         self.current_t = t_next
         self.step_count += 1
 
-        # --- 5. Calcul des métriques pour le reward ---
-        # On utilise les fonctions internes du modèle vectorisé pour recalculer l'état nodal à t_next
-        
+        # --- 5. Calcul des métriques pour reward & observation ---
         # A. Débits dans les tuyaux
         pipe_flows = self.network._compute_mass_flows(self.current_t)
         
-        # B. Températures aux noeuds (avant consommation)
+        # B. Températures aux noeuds
         node_temps = self.network._solve_nodes_temperature(self.state, pipe_flows, self.current_t)
         
-        # C. Calcul Puissance Fournie vs Demandée
+        # C. Calcul puissance fournie vs demandée
         parents_map = self.graph.get_parent_nodes()
         total_demand = 0.0
         total_supplied = 0.0
+        supplied_per_node = {}
+        demand_per_node = {}
         
         for node_id in self.consumer_nodes:
             p_target = self.demand_funcs[node_id](self.current_t)
+            demand_per_node[node_id] = p_target
             total_demand += p_target
             
-            # Récup débit entrant au noeud
+            # Récup débit entrant
             parents = parents_map.get(node_id, [])
             m_in = 0.0
             for p_node in parents:
                 edge = self.graph.edges[(p_node, node_id)]
                 m_in += pipe_flows[edge["pipe_index"]]
             
-            # Calcul puissance physique possible
+            # Calcul puissance physique
             if m_in > 1e-9:
                 node_idx = self.graph.get_id_from_node(node_id)
                 T_in = node_temps[node_idx]
@@ -236,12 +245,12 @@ class HeatNetworkEnv(gym.Env):
                 p_eff = 0.0
             
             total_supplied += p_eff
+            supplied_per_node[node_id] = p_eff
 
         # Coûts source/pompe
         p_source = self.actual_mass_flow * self.props["cp"] * (self.actual_inlet_temp - config.SIMULATION_PARAMS["min_return_temp"])
         p_pump = 1000.0 * self.actual_mass_flow # Simplifié
 
-        # Stockage pour render
         self.last_total_p_demand = total_demand
         self.last_total_p_supplied = total_supplied
         self.last_p_source = p_source
@@ -250,15 +259,23 @@ class HeatNetworkEnv(gym.Env):
         # --- 6. Calcul reward ---
         reward = self._compute_reward(total_demand, total_supplied, p_source, p_pump)
 
-        # --- 7. Sortie ---
-        obs = self._get_obs(node_temps) # On passe les node_temps calculés pour éviter de refaire le calcul
+        # --- 7. Info dictionary (pour evaluate) ---
+        info = {
+            "pipe_mass_flows": pipe_flows,            
+            "node_temperatures": node_temps,
+            "demand_per_node": demand_per_node,
+            "supplied_per_node": supplied_per_node,
+        }
+        
+        # --- 8. Sortie ---
+        obs = self._get_obs(node_temps, pipe_flows) 
         terminated = False
         truncated = (self.current_t >= self.t_max) or (self.step_count >= self.max_steps)
 
-        return obs, reward, terminated, truncated, {}
+        return obs, reward, terminated, truncated, info
 
     def _compute_reward(self, demand, supplied, source_power, pump_power):
-        """Logique de récompense séparée pour lisibilité."""
+        """Logique de récompense séparée."""
         rc = config.REWARD_PARAMS
         w = rc["weights"]
         p = rc["params"]
@@ -269,7 +286,7 @@ class HeatNetworkEnv(gym.Env):
         src_kw = source_power / 1000.0
         pump_kw = pump_power / 1000.0
 
-        # 1. Confort (Pénalité sous-production)
+        # 1. Confort (pénalité sous-production)
         under_supply = max(0.0, dem_kw - sup_kw)
         r_conf = -w["comfort"] * (under_supply / p["p_ref"])
 
@@ -284,31 +301,22 @@ class HeatNetworkEnv(gym.Env):
 
         return float(r_conf + r_prod + r_pump)  # check(env) exige un reward au format float
 
-    def _get_obs(self, current_node_temps=None):
+    def _get_obs(self, node_temps, pipe_flows):
         """
-        Construit le vecteur d'observation.
-        Optimisation : réutilise node_temps s'il est déjà calculé.
+        Construit le vecteur d'observation complet.
+        Args:
+            node_temps: np.array de toutes les températures nodales
+            pipe_flows: np.array de tous les débits tuyaux
         """
-        # Si node_temps n'est pas fourni (ex: appel depuis reset), on le calcule
-        if current_node_temps is None:
-             m_flows = self.network._compute_mass_flows(self.current_t)
-             current_node_temps = self.network._solve_nodes_temperature(self.state, m_flows, self.current_t)
-
-        temps = []
-        # On veut la température aux noeuds consommateurs
-        for node_id in self.consumer_nodes:
-            idx = self.graph.get_id_from_node(node_id)
-            temps.append(current_node_temps[idx])
-
-        # Demandes courantes
         demands = [self.demand_funcs[n](self.current_t) for n in self.consumer_nodes]
 
-        obs = np.array(
-            temps + 
-            [self.actual_inlet_temp, self.actual_mass_flow] + 
-            demands,
-            dtype=np.float32
-        )
+        # Concaténation [T_nodes, Flows, Demands]
+        obs = np.concatenate([
+            node_temps,
+            pipe_flows,
+            demands
+        ], dtype=np.float32)
+        
         return np.clip(obs, self.observation_space.low, self.observation_space.high)
 
     def render(self):
