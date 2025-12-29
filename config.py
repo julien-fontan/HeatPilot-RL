@@ -9,9 +9,12 @@ GLOBAL_SEED = 42
 # --- Topologie globale ---
 EDGES = [
     (1, 2), (2, 3), (3, 4), (4, 5), (5, 6),
-    (3,10), (10,11),
-    (5,30), (30,31),(31,32),
+    (3,7), (7,8),
+    (5,9), (9,10),(10,11),
 ]
+
+# Fractionnements par défaut pour les noeuds de branchement
+DEFAULT_NODE_SPLITS = {3: {7: 0.3, 4: 0.7}, 5: {6: 0.3, 9: 0.7}}
 
 # --- Paramètres physiques ---
 PHYSICAL_PROPS = dict(
@@ -37,9 +40,9 @@ SIMULATION_PARAMS = dict(
     t_max_day=24 * 3600.0,              # s (1 épisode simulé = 1 journée)
     rtol=1e-4,
     atol=1e-4,
-    warmup=3600*3,                      # Durée de pré-chauffe (warmup) avant la simulation principale (s)
+    warmup_duration=3600*3,             # Durée de pré-chauffe (warmup) avant la simulation principale (s)
     min_return_temp=_min_return_temp,
-    initial_temp=_min_return_temp,      # °C dans toutes les cellules au reset
+    initial_temp=75,                    # °C dans toutes les cellules au reset
     initial_flow=15.0,                  # kg/s débit de base à la source
 )
 
@@ -73,34 +76,38 @@ CONTROL_PARAMS = dict(
     max_temp_rise_per_dt=_ramp_up_K_per_min * dt_rl / 60.0,
     max_temp_drop_per_dt=_ramp_down_K_per_min * dt_rl / 60.0,
     max_flow_delta_per_dt=_ramp_flow_kgps_per_min * dt_rl / 60.0,
-    enable_ramps=True,                 # True = applique les rampes physiques, False = changement instantané
+    max_split_change_per_dt=0.05,        # La vanne peut bouger de 5% toutes les 10s
+    enable_ramps=True,                  # True = applique les rampes physiques, False = changement instantané
 )
 
 # --- Paramètres d'entraînement RL ---
 _episode_length_steps = int(SIMULATION_PARAMS["t_max_day"] / dt_rl)
-_total_episodes = 400                   # nombre total d'épisodes d'entraînement
+_total_episodes = 1000                   # nombre total d'épisodes d'entraînement
 _total_timesteps = _episode_length_steps * _total_episodes
-_n_steps_update = int(24*3600 / dt_rl)  # = nb_heures de simulation par update
+_n_steps_update = int(12*3600 / dt_rl)  # = nb_heures de simulation avant update
 
 TRAINING_PARAMS = dict(
     dt=dt_rl,                           # pas de contrôle explicite RL
     total_timesteps=_total_timesteps,
     episode_length_steps=_episode_length_steps,
     n_steps_update=_n_steps_update,
-    learning_rate=5e-5,
-    ent_coef=0.05,                      # Coefficient d'entropie (0.01 -> 0.05 pour forcer l'exploration)
+    learning_rate=1e-5,
+    ent_coef=1e-2,                      # Coefficient d'entropie (0.01 -> 0.05 pour forcer l'exploration)
     save_freq_episodes=20,              # Fréquence de sauvegarde en nombre d'épisodes
     gamma=0.9995,
     use_s3_checkpoints=False,           # False = uniquement local, True = local + S3
+    warmup_enabled=True,                # Active le préchauffage du réseau avant chaque épisode
 )
 
 # --- Poids de la fonction de récompense ---
 # configuration alignée avec reward_plot.py
 REWARD_PARAMS = dict(
     weights=dict(
-        comfort=10,                     # Coeff A (Linéaire)
-        boiler=0.1,                     # Coeff B (Sobriété Boiler)
-        pump=1                          # Coeff C (Sobriété Pompage)
+        comfort=1,                      # Coeff A (Linéaire)
+        boiler=5,                      # Coeff B (Sobriété Boiler)
+        pump=1,                          # Coeff C (Sobriété Pompage), 0.1 était trop faible
+        # MODIFICATION 2 : Nouveau poids pour punir l'instabilité
+        stability=5.0     # Pénalité sur la magnitude des variations (Deltas)
     ),
     params=dict(
         p_ref=2000.0,                   # Puissance de référence (kW)

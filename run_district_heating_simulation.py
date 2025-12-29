@@ -1,7 +1,6 @@
 import os
 import numpy as np
-import matplotlib.pyplot as plt
-from district_heating_model import PipeConfig, DistrictHeatingNetwork
+from district_heating_model import PipeConfig, DistrictHeatingNetwork, create_pipe_configs
 from utils import generate_smooth_profile
 from graph_utils import Graph
 from config import (
@@ -12,25 +11,28 @@ from config import (
     POWER_PROFILE_CONFIG,
     TRAINING_PARAMS
 )
+from graph_visualization import DistrictHeatingVisualizer
 
 # Dossier pour stocker tous les plots
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PLOTS_DIR = os.path.join(BASE_DIR, "plots")
 os.makedirs(PLOTS_DIR, exist_ok=True)
 
-def run_simulation():
+def run_simulation(node_splits=None):
+
     seed = GLOBAL_SEED
     edges = EDGES
     props = PHYSICAL_PROPS
     dx = SIMULATION_PARAMS["dx"]
     t_max_day = SIMULATION_PARAMS["t_max_day"]
     dt = TRAINING_PARAMS["dt"]
-
-    warmup_duration = SIMULATION_PARAMS["warmup"]
     warmup_duration = 0
 
     graph = Graph(edges)
     consumer_nodes = graph.get_consumer_nodes()
+    # ...existing code...
+
+    node_splits={3: {7: 0.3, 4: 0.7}, 5: {6: 0.3, 9: 0.7}}
 
     # 1. Génération des configs de tuyaux
     lengths, diameters, n_segments, h_vals = PipeConfig.generate_parameters(
@@ -39,24 +41,11 @@ def run_simulation():
         seed=seed,
     )
 
-    pipe_configs = []
-    for i, (u_node, v_node) in enumerate(edges):
-        pc = PipeConfig(
-            nodes=(u_node, v_node),
-            length=float(lengths[i]),
-            diameter=float(diameters[i]),
-            dx=dx,
-            rho=props["rho"],
-            cp=props["cp"],
-            heat_loss_coeff=float(h_vals[i]),
-            thermal_conductivity=props["thermal_conductivity"],
-            external_temp=props["external_temp"],
-        )
-        pipe_configs.append(pc)
+    pipe_configs = create_pipe_configs(edges, lengths, diameters, h_vals, dx, props)
 
     # Entrées constantes pour ce test
-    inlet_temp = 70.0
-    inlet_mass_flow = 12.0
+    inlet_temp = 75.0
+    inlet_mass_flow = 15.0
 
     # Profils de puissance
     rng = np.random.default_rng()
@@ -81,7 +70,8 @@ def run_simulation():
         rho=props["rho"],
         cp=props["cp"],
         node_power_funcs=node_power_funcs,
-        t_min_return=SIMULATION_PARAMS["min_return_temp"]
+        t_min_return=SIMULATION_PARAMS["min_return_temp"],
+        node_splits=node_splits
     )
 
     # État initial
@@ -109,48 +99,59 @@ def run_simulation():
     )
     print("Simulation terminée.")
 
-    # --- Reconstruction des métriques ---
-    # Le nouveau moteur a une méthode dédiée pour ça
+
+    # Préparation des données pour la visualisation factorisée
+    # On suppose que metrics contient les clés nécessaires pour la visualisation
+    # Pour compatibilité, on ajoute les clés attendues par la visualisation
     metrics = network.reconstruct_metrics(sol.t, sol.y)
-    
-    p_demand_tot = metrics["total_demand"]
-    p_supplied_tot = metrics["total_supplied"]
-    
-    # Calcul Boiler Power (post-traitement simple car débit/temp constants ici)
-    # Si variables, il faudrait réévaluer inlet_mass_flow(t) * cp * (inlet_temp(t) - T_ret)
-    # Ici simple approximation : P = m * cp * (T_in - T_min_ret)
-    p_boiler = inlet_mass_flow * props["cp"] * (inlet_temp - SIMULATION_PARAMS["min_return_temp"])
-    p_boiler_vec = np.full_like(sol.t, p_boiler)
 
-    # --- Plotting ---
-    time_hours = sol.t / 3600.0
+    data = dict(metrics)
+    # Remap keys for visualizer compatibility
+    data["demand_total"] = metrics["total_demand"]
+    data["supplied_total"] = metrics["total_supplied"]
+    data["wasted_total"] = metrics["total_wasted"]
+    data["time"] = sol.t
+    data["T_source"] = np.full_like(sol.t, inlet_temp)
+    data["m_source"] = np.full_like(sol.t, inlet_mass_flow)
 
-    # Lissage
-    def moving_average(x, w):
-        return np.convolve(x, np.ones(w), 'valid') / w
+    data["node_ids"] = np.array(consumer_nodes)
 
-    window_size = int(5*60.0 / dt)
-    if window_size < 1: window_size = 1
-    
-    p_demand_smooth = moving_average(p_demand_tot, window_size)
-    p_supplied_smooth = moving_average(p_supplied_tot, window_size)
-    p_boiler_smooth = moving_average(p_boiler_vec, window_size)
-    time_smooth = time_hours[window_size-1:]
+    # Ajout des signaux individuels par nœud pour la visualisation détaillée
+    parents_map = graph.get_parent_nodes()
+    cp = props["cp"]
+    min_ret_temp = SIMULATION_PARAMS["min_return_temp"]
+    for nid in consumer_nodes:
+        p_dem_list = []
+        p_sup_list = []
+        m_in_list = []
+        T_in_list = []
+        for k in range(len(data["time"])):
+            t = data["time"][k]
+            # Recalcule les débits et températures nodales à chaque pas de temps
+            T_state = sol.y[:, k]
+            m_flows = network._compute_mass_flows(t)
+            node_temps = network._solve_nodes_temperature(T_state, m_flows, t)
+            node_idx = graph.get_id_from_node(nid)
+            m_in = sum(m_flows[graph.edges[(p_node, nid)]["pipe_index"]] for p_node in parents_map.get(nid, []))
+            T_in = node_temps[node_idx]
+            p_dem = node_power_funcs[nid](t)
+            delta_T_avail = max(T_in - min_ret_temp, 0.0)
+            p_phys_max = m_in * cp * delta_T_avail
+            p_sup = min(p_dem, p_phys_max)
+            p_dem_list.append(p_dem)
+            p_sup_list.append(p_sup)
+            m_in_list.append(m_in)
+            T_in_list.append(T_in)
+        data[f"node_{nid}_p_dem"] = np.array(p_dem_list)
+        data[f"node_{nid}_p_sup"] = np.array(p_sup_list)
+        data[f"node_{nid}_m_in"] = np.array(m_in_list)
+        data[f"node_{nid}_T_in"] = np.array(T_in_list)
 
-    plt.figure(figsize=(8, 4))
-    plt.plot(time_smooth, p_demand_smooth / 1e3, label="Demand total")
-    plt.plot(time_smooth, p_supplied_smooth / 1e3, label="Supplied total")
-    plt.plot(time_smooth, p_boiler_smooth / 1e3, label="Boiler power")
-    plt.xlabel("Time (h)")
-    plt.ylabel("Power (kW)")
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
+    visualizer = DistrictHeatingVisualizer(PLOTS_DIR)
+    visualizer.plot_dashboard_general(data, title_suffix="simulation")
+    visualizer.plot_dashboard_nodes_2cols(data, title_suffix="simulation")
 
-    plot_path = os.path.join(PLOTS_DIR, "power_balance_simulation.svg")
-    plt.savefig(plot_path, transparent=True)
-    print(f"Figure sauvegardée dans {plot_path}")
-    plt.show()
+    # visualizer.plot_dashboard_nodes_2cols(data, title_suffix="simulation")  # À activer si les données sont prêtes
 
 if __name__ == "__main__":
     run_simulation()

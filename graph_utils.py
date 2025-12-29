@@ -48,6 +48,7 @@ class Graph:
 
         self.nodes = sorted(list(self.nodes))
         self.n_nodes = len(self.nodes)
+        self.terminal_nodes = [n for n in self.nodes if n not in self.child_nodes or not self.child_nodes[n]]
 
     def _find_node_roles(self):
         inlets = [n for n in self.nodes if n not in self.parent_nodes]  # pas de parents
@@ -97,3 +98,6 @@ class Graph:
 
     def get_topo_nodes(self):
         return self.topo_nodes
+    
+    def get_terminal_nodes(self):
+        return self.terminal_nodes

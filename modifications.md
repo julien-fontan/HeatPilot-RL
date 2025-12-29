@@ -25,4 +25,13 @@ commence à -3.25e4
 mai2014
 180806
 
--2.52e4
+
+
+In order to benchmark the performance of the RL agent a rule-based
+approach to operation is used which will be referred to as hysteresis in the
+following. Hysteresis strategies are commonly applied in district heating
+systems and consist mainly of two rules or thresholds: A lower threshold of
+the SOC value of the heat storage where the HP starts to operate in order
+to increase the SOC as well as an upper threshold of the SOC value where
+the HP stops operating. In this work, the lower and upper thresholds are
+20% and 100% respectively. When active for hysteresis operation
