@@ -182,7 +182,7 @@ def train():
             "MlpPolicy",
             env,
             n_steps=config.TRAINING_PARAMS["n_steps_update"],
-            batch_size=64,
+            batch_size=config.TRAINING_PARAMS["batch_size"],
             verbose=1, 
             learning_rate=config.TRAINING_PARAMS["learning_rate"],
             seed=config.GLOBAL_SEED,

@@ -91,8 +91,9 @@ TRAINING_PARAMS = dict(
     total_timesteps=_total_timesteps,
     episode_length_steps=_episode_length_steps,
     n_steps_update=_n_steps_update,
+    batch_size=_n_steps_update/8,
     learning_rate=1e-5,
-    ent_coef=1e-2,                      # Coefficient d'entropie (0.01 -> 0.05 pour forcer l'exploration)
+    ent_coef=5e-4,                      # Coefficient d'entropie (0.01 -> 0.05 pour forcer l'exploration)
     save_freq_episodes=20,              # Fréquence de sauvegarde en nombre d'épisodes
     gamma=0.9995,
     use_s3_checkpoints=False,           # False = uniquement local, True = local + S3
@@ -103,8 +104,8 @@ TRAINING_PARAMS = dict(
 # configuration alignée avec reward_plot.py
 REWARD_PARAMS = dict(
     weights=dict(
-        comfort=1,                      # Coeff A (Linéaire)
-        boiler=5,                      # Coeff B (Sobriété Boiler)
+        comfort=10,                      # Coeff A (Linéaire)
+        boiler=5,                        # Coeff B (Sobriété Boiler)
         pump=1,                          # Coeff C (Sobriété Pompage), 0.1 était trop faible
         # MODIFICATION 2 : Nouveau poids pour punir l'instabilité
         stability=5.0     # Pénalité sur la magnitude des variations (Deltas)
