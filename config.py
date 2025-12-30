@@ -96,7 +96,7 @@ TRAINING_PARAMS = dict(
     ent_coef=5e-4,                      # Coefficient d'entropie (0.01 -> 0.05 pour forcer l'exploration)
     save_freq_episodes=20,              # Fréquence de sauvegarde en nombre d'épisodes
     gamma=0.9995,
-    use_s3_checkpoints=False,           # False = uniquement local, True = local + S3
+    use_s3_checkpoints=True,           # False = uniquement local, True = local + S3
     warmup_enabled=True,                # Active le préchauffage du réseau avant chaque épisode
 )
 
