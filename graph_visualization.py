@@ -7,70 +7,109 @@ class DistrictHeatingVisualizer:
         self.plots_dir = plots_dir
         os.makedirs(self.plots_dir, exist_ok=True)
 
-    def plot_dashboard_general(self, data, title_suffix="", plot_fraction_splits=False, fraction_splits_1=None, fraction_splits_2=None, fraction_labels=("Split 1", "Split 2")):
+    def plot_dashboard_general(self, data, title_suffix=""):
+        """
+        Génère le dashboard global. 
+        Détecte et trace automatiquement les 'split_node_X' sur un 3ème axe Y.
+        """
         t_h = data["time"] / 3600.0
-        fig, axes = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
-        col_temp, col_flow = '#D32F2F', '#1976D2'
-        col_dem, col_sup, col_wast = '#212121', '#388E3C', '#FBC02D'
-        # 1. Source
+        
+        # Identification dynamique des clés de splits
+        split_keys = [k for k in data.keys() if k.startswith("split_")]
+        
+        fig, axes = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+        
+        # Couleurs définies
+        col_temp = '#D32F2F'   # Rouge
+        col_flow = '#1976D2'   # Bleu
+        col_split_base = ['#8E24AA', '#43A047', '#FF9800', '#795548'] # Violet, Vert, Orange, Marron
+        
+        col_dem = '#212121'
+        col_sup = '#388E3C'
+        col_wast = '#FBC02D'
+
+        # --- GRAPHIQUE 1 : Source & Contrôles ---
         ax = axes[0]
-        ax.plot(t_h, data["T_source"], color=col_temp, label="T Source (°C)", linewidth=2)
+        
+        # Axe Y1 : Température
+        l1, = ax.plot(t_h, data["T_source"], color=col_temp, label="Température", linewidth=1.5, zorder=3)
         ax.set_ylabel("Température (°C)")
+        ax.tick_params(axis='y')
+        
+        # Axe Y2 : Débit (Twinx standard)
         ax2 = ax.twinx()
-        ax2.plot(t_h, data["m_source"], color=col_flow, label="Débit (kg/s)", linewidth=2)
+        l2, = ax2.plot(t_h, data["m_source"], color=col_flow, label="Débit", linewidth=1.5, zorder=2)
         ax2.set_ylabel("Débit (kg/s)")
-        ax2.spines['right'].set_visible(True)
-        # Ajout d'un troisième axe y pour les fraction_splits si demandé
-        if plot_fraction_splits and (fraction_splits_1 is not None or fraction_splits_2 is not None):
+        ax2.tick_params(axis='y')
+        
+        lines = [l1, l2]
+        
+        # Axe Y3 : Fractions Split (Si présentes dans data)
+        if split_keys:
             ax3 = ax.twinx()
-            # Décale le troisième axe pour éviter la superposition
-            ax3.spines["right"].set_position(("axes", 1.12))
-            colors = ["#8E24AA", "#43A047"]
-            lines3 = []
-            labs3 = []
-            if fraction_splits_1 is not None:
-                l1, = ax3.plot(t_h, fraction_splits_1, color=colors[0], linestyle="-", label=fraction_labels[0], linewidth=1.7)
-                lines3.append(l1)
-                labs3.append(fraction_labels[0])
-            if fraction_splits_2 is not None:
-                l2, = ax3.plot(t_h, fraction_splits_2, color=colors[1], linestyle="--", label=fraction_labels[1], linewidth=1.7)
-                lines3.append(l2)
-                labs3.append(fraction_labels[1])
-            ax3.set_ylabel("Fraction split", color="#555")
-            ax3.tick_params(axis='y', labelcolor="#555")
-            ax3.spines['right'].set_visible(True)
-        else:
-            ax3 = None
-            lines3 = []
-            labs3 = []
-        ax.set_title("1. Contrôle à la source", fontsize=12, fontweight='bold', pad=10, loc="left")
-        lines1, lab1 = ax.get_legend_handles_labels()
-        lines2, lab2 = ax2.get_legend_handles_labels()
-        # Combine les légendes
-        all_lines = lines1 + lines2 + lines3
-        all_labs = lab1 + lab2 + labs3
-        ax.legend(all_lines, all_labs, frameon=True, loc="lower center", ncol=2)
-        ax.grid()
-        # 2. Bilan
+            # Décalage de l'axe vers la droite ("parasite axis")
+            ax3.spines["right"].set_position(("axes", 1.1))
+            ax3.set_frame_on(True)
+            ax3.patch.set_visible(False)
+            
+            # Configuration visuelle du 3ème axe
+            ax3.set_ylabel("Ouverture vannes (%)")
+            ax3.set_ylim(0, 100) # Fixe pour des ratios [0,1]*100
+            # ax3.tick_params(axis='y', colors="#555")
+            
+            # Tracé dynamique pour chaque split trouvé
+            for i, key in enumerate(split_keys):
+                # Extraction du Node ID pour la légende (split_node_7 -> Node 7)
+                label_name = key.replace("split_node_", "Vanne N")
+                color = col_split_base[i % len(col_split_base)]
+                
+                # Style de ligne pointillé pour différencier des variables physiques
+                l_split, = ax3.plot(t_h, data[key]*100, color=color, linestyle="--", linewidth=1.5, alpha=0.8, label=label_name)
+                lines.append(l_split)
+
+            # S'assurer que l'axe n'est pas coupé à l'export
+            # fig.subplots_adjust(right=0.85)
+        
+        # Légende unifiée
+        labels = [l.get_label() for l in lines]
+        # ax.legend(lines, labels, loc="upper center", bbox_to_anchor=(0.5, 1.15), ncol=len(lines), frameon=False)
+        ax3.legend(lines, labels, ncol=1, frameon=True, loc="upper right", framealpha=0.9)
+
+        titre="1. Contrôle à la source"
+        if split_keys :
+            titre+= " & vannes"
+
+        ax.set_title(titre, fontsize=12, fontweight='bold', loc="left", pad=20)
+        ax.grid(True, alpha=0.3)
+
+        # --- GRAPHIQUE 2 : Bilan énergétique ---
         ax = axes[1]
         dem = data["demand_total"] / 1e6 
         sup = data["supplied_total"] / 1e6
         wasted = data["wasted_total"] / 1e6
+        
         ax.plot(t_h, dem, color=col_dem, linestyle=':', linewidth=1.5, label="Demande")
         ax.fill_between(t_h, sup, sup+wasted, color=col_wast, alpha=0.6, label="Perdu")
         ax.fill_between(t_h, sup, dem, where=(dem>sup), color='#E53935', alpha=0.3, hatch='///', label="Déficit")
         ax.fill_between(t_h, 0, sup, color=col_sup, alpha=0.5, label="Fourni")
+        
         ax.set_ylabel("Puissance (MW)")
         ax.set_xlabel("Temps (heures)")
-        ax.set_title("2. Bilan global", fontsize=12, fontweight='bold', pad=10, loc="left")
-        ax.legend(loc='upper right', frameon=True)
-        ax.grid()
+        ax.set_title("2. Bilan global réseau", fontsize=12, fontweight='bold', loc="left", pad=10)
+        ax.legend(loc='upper right', frameon=True, fontsize=9)
+        ax.grid(True, alpha=0.3)
+
+        # Sauvegarde
         plt.tight_layout()
+        # Petite correction car tight_layout gère mal les axes décalés (offset spines)
+        if split_keys:
+            plt.subplots_adjust(right=0.85)
+
         out_file = os.path.join(self.plots_dir, f"dashboard_GENERAL_{title_suffix}.svg")
-        plt.savefig(out_file)
+        plt.savefig(out_file, bbox_inches='tight') # bbox_inches aide aussi pour l'axe décalé
         print(f" Graphique sauvegardé : {out_file}")
         plt.close(fig)
-
+    
     def plot_dashboard_nodes_2cols(self, data, title_suffix=""):
         col_temp, col_flow = '#D32F2F', '#1976D2'
         col_dem, col_sup, col_wast = '#212121', '#388E3C', '#FBC02D'
@@ -117,7 +156,7 @@ class DistrictHeatingVisualizer:
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2), zorder=10)
             l1, lab1 = ax.get_legend_handles_labels()
             l2, lab2 = ax2.get_legend_handles_labels()
-            ax.legend(l1+l2, lab1+lab2, loc='upper right', fontsize=8, ncol=3, frameon=True)
+            ax2.legend(l1+l2, lab1+lab2, loc='upper right', fontsize=8, ncol=3, frameon=True)
         for i in range(n_rows):
             if i < n_left:
                 plot_node(axs[i, 0], left_nodes[i])

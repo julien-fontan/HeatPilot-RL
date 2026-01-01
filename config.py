@@ -91,12 +91,12 @@ TRAINING_PARAMS = dict(
     total_timesteps=_total_timesteps,
     episode_length_steps=_episode_length_steps,
     n_steps_update=_n_steps_update,
-    batch_size=int(_n_steps_update/8),  # Correction: batch_size doit être un entier
-    learning_rate=1e-5,
+    batch_size=int(_n_steps_update/2),  # Correction: batch_size doit être un entier
+    learning_rate=5e-4,
     ent_coef=5e-4,                      # Coefficient d'entropie (0.01 -> 0.05 pour forcer l'exploration)
     save_freq_episodes=20,              # Fréquence de sauvegarde en nombre d'épisodes
     gamma=0.9995,
-    use_s3_checkpoints=True,           # False = uniquement local, True = local + S3
+    use_s3_checkpoints=False,           # False = uniquement local, True = local + S3
     warmup_enabled=True,                # Active le préchauffage du réseau avant chaque épisode
 )
 
@@ -104,11 +104,10 @@ TRAINING_PARAMS = dict(
 # configuration alignée avec reward_plot.py
 REWARD_PARAMS = dict(
     weights=dict(
-        comfort=10,                      # Coeff A (Linéaire)
-        boiler=5,                        # Coeff B (Sobriété Boiler)
-        pump=1,                          # Coeff C (Sobriété Pompage), 0.1 était trop faible
-        # MODIFICATION 2 : Nouveau poids pour punir l'instabilité
-        stability=5.0     # Pénalité sur la magnitude des variations (Deltas)
+        comfort=1,                      # Coeff A (Linéaire)
+        boiler=1,                       # Coeff B (Sobriété Boiler)
+        pump=1,                         # Coeff C (Sobriété Pompage), 0.1 était trop faible
+        stability=0                   # Pénalité sur l'instabilité des variations
     ),
     params=dict(
         p_ref=2000.0,                   # Puissance de référence (kW)

@@ -110,7 +110,7 @@
         "episode_length_steps": 8640,
         "n_steps_update": 4320,
         "batch_size": 540,
-        "learning_rate": 1e-05,
+        "learning_rate": 1e-04,
         "ent_coef": 0.0005,
         "save_freq_episodes": 20,
         "gamma": 0.9995,

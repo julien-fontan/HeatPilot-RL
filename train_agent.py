@@ -171,7 +171,7 @@ def train():
         iter_str = latest_model.split("_")[-1]
         norm_path = os.path.join(run_dir, f"vec_normalize_{run_name}_{iter_str}.pkl")
         if os.path.exists(norm_path):
-            print(f"Chargement VecNormalize : {os.path.basename(norm_path)}")
+            # print(f"Chargement VecNormalize : {os.path.basename(norm_path)}")
             env = VecNormalize.load(norm_path, env.venv)
             model.set_env(env)
         else:
