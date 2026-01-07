@@ -73,7 +73,10 @@ class DistrictHeatingVisualizer:
         # Légende unifiée
         labels = [l.get_label() for l in lines]
         # ax.legend(lines, labels, loc="upper center", bbox_to_anchor=(0.5, 1.15), ncol=len(lines), frameon=False)
-        ax3.legend(lines, labels, ncol=1, frameon=True, loc="upper right", framealpha=0.9)
+        if split_keys:
+            ax3.legend(lines, labels, ncol=1, frameon=True, loc="upper right", framealpha=0.9)
+        else:
+            ax2.legend(lines, labels, ncol=2, frameon=True, loc="upper right", framealpha=0.9)
 
         titre="1. Contrôle à la source"
         if split_keys :

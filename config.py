@@ -84,18 +84,18 @@ CONTROL_PARAMS = dict(
 _episode_length_steps = int(SIMULATION_PARAMS["t_max_day"] / dt_rl)
 _total_episodes = 1000                   # nombre total d'épisodes d'entraînement
 _total_timesteps = _episode_length_steps * _total_episodes
-_n_steps_update = int(12*3600 / dt_rl)  # = nb_heures de simulation avant update
+_n_steps_update = int(24*3600 / dt_rl)  # = nb_heures de simulation avant update
 
 TRAINING_PARAMS = dict(
     dt=dt_rl,                           # pas de contrôle explicite RL
     total_timesteps=_total_timesteps,
     episode_length_steps=_episode_length_steps,
     n_steps_update=_n_steps_update,
-    batch_size=int(_n_steps_update/2),  # Correction: batch_size doit être un entier
-    learning_rate=5e-4,
+    batch_size=int(_n_steps_update/4),  # Correction: batch_size doit être un entier
+    learning_rate=1e-4,
     ent_coef=5e-4,                      # Coefficient d'entropie (0.01 -> 0.05 pour forcer l'exploration)
-    save_freq_episodes=20,              # Fréquence de sauvegarde en nombre d'épisodes
-    gamma=0.9995,
+    save_freq_episodes=100,              # Fréquence de sauvegarde en nombre d'épisodes
+    gamma=0.999,
     use_s3_checkpoints=False,           # False = uniquement local, True = local + S3
     warmup_enabled=True,                # Active le préchauffage du réseau avant chaque épisode
 )
@@ -104,13 +104,24 @@ TRAINING_PARAMS = dict(
 # configuration alignée avec reward_plot.py
 REWARD_PARAMS = dict(
     weights=dict(
-        comfort=1,                      # Coeff A (Linéaire)
-        boiler=1,                       # Coeff B (Sobriété Boiler)
-        pump=1,                         # Coeff C (Sobriété Pompage), 0.1 était trop faible
-        stability=0                   # Pénalité sur l'instabilité des variations
+        comfort=2,                      # Coeff A (Linéaire)
+        boiler=2,                       # Coeff B (Sobriété Boiler)
+        pump=5,                         # Coeff C : utilisation pompe autour du nominal
+        stability=0                     # Pénalité sur l'instabilité des variations
     ),
     params=dict(
         p_ref=2000.0,                   # Puissance de référence (kW)
-        p_pump_nominal=15.0             # Puissance nominale pompe (kW)
+        p_pump_nominal=15.0,            # Débit nominal cible (kg/s) (équiv. pump_kw dans l'env)
+        p_pump_sigma=5.0,               # Largeur du bonus (kg/s): plus petit = plus strict autour de 15
+
+        # Sobriété "wasted" (kW)
+        sigma_waste=100.0,              # Échelle de l'exponentiel: plus petit = bonus plus "pointu" près de 0
+        p_waste_ref=2000.0,             # Échelle de la pénalité linéaire (kW)
+        waste_bonus_amp=1.0,            # Amplitude du bonus exponentiel (avant poids w['boiler'])
+
+        # Bonus combo : gros bonus si confort OK ET pertes faibles
+        combo_bonus=10.0,               # Bonus ajouté (reward) si les deux conditions sont vraies
+        combo_comfort_deficit_max_kw=10.0, # Confort atteint si (dem_kw - sup_kw) <= ce seuil
+        combo_wasted_max_kw=50.0,       # Pertes faibles si wasted_kw <= ce seuil
     )
 )

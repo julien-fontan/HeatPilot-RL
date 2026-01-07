@@ -50,6 +50,10 @@ class HeatNetworkEnv(gym.Env):
         
         self.inlet_node = self.graph.get_inlet_node()
         self.consumer_nodes = self.graph.get_consumer_nodes()
+        self.downstream_consumers_map = self.graph.get_downstream_consumers_map()
+        
+        # État du curriculum (piloté par le Callback ou la config)
+        self.agent_manages_splits = not config.CURRICULUM_PARAMS.get("enable_heuristic_splits_at_start", False)
 
         self.n_nodes = self.graph.get_nodes_count()
         self.n_pipes = len(self.edges)
@@ -57,7 +61,6 @@ class HeatNetworkEnv(gym.Env):
 
         # Initialisation à 0.5 (50/50) au départ
         self.current_split_ratios = np.full(len(self.branching_nodes), 0.5, dtype=np.float32)
-
 
         # --- Espaces d'Action (Delta T, Delta Flow, Splits...) ---
         n_actions = 2 + len(self.branching_nodes)
@@ -104,7 +107,6 @@ class HeatNetworkEnv(gym.Env):
             )
 
         # --- CORRECTION 1 : Chargement des Splits par défaut SYSTEMATIQUE ---
-        # On le fait ici pour que ce soit dispo pour la création OU la réutilisation
         if node_splits is None:
             node_splits = getattr(config, "DEFAULT_NODE_SPLITS", {})
 
@@ -126,7 +128,7 @@ class HeatNetworkEnv(gym.Env):
                 rho=self.props["rho"],
                 cp=self.props["cp"],
                 node_power_funcs=self.demand_funcs,
-                node_splits=node_splits # Initialisation physique correcte
+                node_splits=node_splits 
             )
             self.state = np.full(self.network.total_cells, config.SIMULATION_PARAMS["initial_temp"])
         else:
@@ -142,8 +144,6 @@ class HeatNetworkEnv(gym.Env):
         self.actual_mass_flow = config.SIMULATION_PARAMS["initial_flow"]
         
         # --- CORRECTION 3 : Synchronisation de la mémoire de l'agent ---
-        # On lit la config pour initialiser le vecteur de l'agent
-        # Attention à l'ordre des enfants ! Il doit matcher celui de step()
         self.current_split_ratios = np.zeros(len(self.branching_nodes), dtype=np.float32)
         
         for i, node in enumerate(self.branching_nodes):
@@ -157,7 +157,7 @@ class HeatNetworkEnv(gym.Env):
                     val = 0.5
                 self.current_split_ratios[i] = val
             else:
-                self.current_split_ratios[i] = 0.5 # Fallback (ne devrait pas arriver sur un branching node)
+                self.current_split_ratios[i] = 0.5 
 
         self.step_count = 0
         
@@ -203,15 +203,20 @@ class HeatNetworkEnv(gym.Env):
         self.actual_mass_flow = np.clip(self.actual_mass_flow + delta_F, self.flow_min, self.flow_max)
 
         # Action 2+: Vannes (Absolu [0, 1])
-        # action[2:] contrôle la VITESSE de la vanne, pas sa position
-        raw_split_deltas = action[2:]
-        # split += action * vitesse_max
-        # Si action est 0, la vanne ne bouge pas (elle reste à sa position précédente)
-        delta_splits = np.clip(raw_split_deltas, -1.0, 1.0) * self.max_split_speed
-        self.current_split_ratios += delta_splits
-        self.current_split_ratios = np.clip(self.current_split_ratios, 0.05, 0.95)
 
-        # split_actions = 0.5 * (action[2:] + 1.0) # (ancien)
+        if self.agent_manages_splits:
+            # 1. Mode Agent : On utilise les deltas fournis par le réseau de neurones
+            raw_split_deltas = action[2:]
+            delta_splits = np.clip(raw_split_deltas, -1.0, 1.0) * self.max_split_speed
+            self.current_split_ratios += delta_splits
+            self.current_split_ratios = np.clip(self.current_split_ratios, 0.01, 0.99)
+        else:
+            # 2. Mode Heuristique : On force les valeurs calculées
+            ideal = self._compute_ideal_splits(self.current_t)
+            self.current_split_ratios = ideal
+            # IMPORTANT : On écrase l'action de l'agent dans le vecteur 'action' 
+            # pour ne pas le pénaliser sur la stabilité d'une action qu'il ne contrôle pas.
+            action[2:] = 0.0
 
         # --- 2. Mise à jour Réseau ---
         node_splits = {}
@@ -265,8 +270,28 @@ class HeatNetworkEnv(gym.Env):
                 p_max = m_in * self.props["cp"] * delta_T_avail
                 total_supplied += min(p_target, p_max)
 
+        # --- NOUVEAU : Calcul explicite du "Wasted" (Pertes aux terminaux) ---
+        total_wasted = 0.0
+        terminal_nodes = self.graph.get_terminal_nodes()
+        min_ret = config.SIMULATION_PARAMS["min_return_temp"]
+        
+        for nid in terminal_nodes:
+            idx = self.graph.get_id_from_node(nid)
+            # Débit entrant dans le terminal
+            m_in = 0.0
+            for p_node in parents_map.get(nid, []):
+                edge = self.graph.edges[(p_node, nid)]
+                m_in += pipe_flows[edge["pipe_index"]]
+            
+            if m_in > 1e-9:
+                # Température après consommation (sortie de sous-station)
+                T_out = node_temps_after[idx]
+                if T_out > min_ret:
+                    # Puissance thermique rejetée inutilement
+                    total_wasted += m_in * self.props["cp"] * (T_out - min_ret)
+
         # KPIs Source/Pompe
-        p_source = self.actual_mass_flow * self.props["cp"] * (self.actual_inlet_temp - config.SIMULATION_PARAMS["min_return_temp"])
+        p_source = self.actual_mass_flow * self.props["cp"] * (self.actual_inlet_temp - min_ret)
         p_pump = 1000.0 * self.actual_mass_flow 
 
         self.last_total_p_demand = total_demand
@@ -275,7 +300,7 @@ class HeatNetworkEnv(gym.Env):
         self.last_p_pump = p_pump
 
         # --- 5. Reward & Info ---
-        reward = self._compute_reward(total_demand, total_supplied, p_pump, node_temps_after, action)
+        reward = self._compute_reward(total_demand, total_supplied, total_wasted, p_pump, action)
         
         info = {
             "pipe_mass_flows": pipe_flows,            
@@ -287,57 +312,132 @@ class HeatNetworkEnv(gym.Env):
 
         return self._get_obs(node_temps, pipe_flows), reward, terminated, truncated, info
 
-    def _compute_reward(self, demand, supplied, pump_power, node_temps_after, action_vector):
+    def _compute_reward(self, demand, supplied, wasted, pump_power, action_vector):
         rc = config.REWARD_PARAMS
         w = rc["weights"]
         p = rc["params"]
 
+        # Conversion en kW
         dem_kw = demand / 1000.0
         sup_kw = supplied / 1000.0
+        wasted_kw = wasted / 1000.0
         pump_kw = pump_power / 1000.0
 
-        # 1. Confort
-        under_supply = max(0.0, dem_kw - sup_kw)
-        r_conf = -w["comfort"] * (under_supply / p["p_ref"])
-
-        # 2. Sobriété (Température de retour excessive aux terminaux)
-        min_ret = config.SIMULATION_PARAMS["min_return_temp"]
-        terminal_nodes = self.graph.get_terminal_nodes()
-        excess_temp = 0.0
-        if terminal_nodes:
-            sum_excess = 0.0
-            for nid in terminal_nodes:
-                idx = self.graph.get_id_from_node(nid)
-                t_val = node_temps_after[idx]
-                if t_val > min_ret:
-                    sum_excess += (t_val - min_ret)
-            excess_temp = sum_excess / len(terminal_nodes)
-            
-        r_prod = -w["boiler"] * excess_temp / min_ret
-
-        # 3. Pompe
-        diff_pump = (pump_kw - p["p_pump_nominal"]) / p["p_pump_nominal"]
-        r_pump = -w["pump"] * (diff_pump**2 + max(0.0, diff_pump))
-
-        # 4. STABILITÉ (NOUVEAU)
-        # On veut que l'agent fasse des petits changements (Deltas proches de 0).
-        # action[0] est le Delta Température (entre -1 et 1)
-        # action[1] est le Delta Débit (entre -1 et 1)
-        # action[2:] sont les Positions Vannes (Splits). Pour eux, c'est plus dur de punir        
-        # Pénalité quadratique sur la "violence" de la commande source
-        instability = np.sum(np.square(action_vector))
+        # --- 1. GRATIFICATION PUISSANCE FOURNIE (Zone 100kW) ---
+        diff_supply = dem_kw - sup_kw
+        sigma_supply = 100.0 
         
-        # Pour les splits, on peut pénaliser les valeurs extrêmes (0 ou 1) si on veut du mélange
-        # ou simplement laisser faire. Commençons par stabiliser la source.
+        # Bonus exponentiel : récompense fortement la précision autour de 0
+        r_supply_precision = 2.0 * np.exp(- (diff_supply**2) / (sigma_supply**2))
         
+        # Pénalité linéaire de fond pour guider l'agent s'il est très loin
+        r_supply_linear = -1.0 * (max(0.0, diff_supply) / p["p_ref"])
+        
+        term_comfort = w["comfort"] * (r_supply_linear + r_supply_precision)
+
+        # --- 2. GRATIFICATION PUISSANCE PERDUE (Zone < 100kW) ---
+
+        # - un bonus exponentiel (fort signal quand wasted ~ 0)
+        # - une pénalité linéaire (garde un gradient même quand wasted est grand)
+        sigma_waste = p.get("sigma_waste", 100.0)
+        waste_ref = p.get("p_waste_ref", p["p_ref"])
+        waste_bonus_amp = p.get("waste_bonus_amp", 1.0)
+
+        r_waste_precision = waste_bonus_amp * np.exp(- (wasted_kw**2) / (sigma_waste**2))
+        r_waste_linear = -1.0 * (wasted_kw / waste_ref)
+
+        term_sobriety = w["boiler"] * (r_waste_linear + r_waste_precision)
+
+        # --- 2bis. BONUS COMBO (Confort + Faibles pertes) ---
+        # Bonus important si (a) le déficit de fourniture est faible (confort atteint)
+        # ET (b) les pertes terminales sont sous un seuil.
+        combo_bonus = p.get("combo_bonus", 0.0)
+        comfort_deficit_max_kw = p.get("combo_comfort_deficit_max_kw", 20.0)
+        wasted_max_kw = p.get("combo_wasted_max_kw", 50.0)
+
+        # diff_supply = dem_kw - sup_kw (positif = déficit). Confort atteint si déficit <= seuil.
+        is_comfort_ok = (diff_supply <= comfort_deficit_max_kw)
+        is_wasted_ok = (wasted_kw <= wasted_max_kw)
+        term_combo = combo_bonus if (is_comfort_ok and is_wasted_ok) else 0.0
+
+        # --- 3. BONIFICATION SPLITS (Enveloppe 10% -> +/- 0.05) ---
+        ideal_splits = self._compute_ideal_splits(self.current_t)
+        current_splits = self.current_split_ratios
+        
+        # Calcul de l'écart absolu
+        split_diffs = np.abs(current_splits - ideal_splits)
+        
+        r_splits = 0.0
+        for diff in split_diffs:
+            # Enveloppe stricte demandée
+            if diff <= 0.05:
+                r_splits += 2.0 # Gratification
+            else:
+                # Pénalité douce pour guider vers l'enveloppe
+                r_splits -= 0.5 * diff 
+        
+        if len(split_diffs) > 0:
+            r_splits /= len(split_diffs)
+        
+        term_splits = 4.0 * r_splits
+
+        # --- 4. Pompe & Stabilité ---
+        # Bonus explicite centré autour du débit nominal (≈ 15 kg/s).
+        # Ici pump_kw == débit massique (car pump_power = 1000 * m_dot et pump_kw = pump_power/1000).
+        pump_nom = p["p_pump_nominal"]
+        pump_sigma = p.get("p_pump_sigma", 0.8)
+
+        # Bonus gaussien: max = w['pump'] quand pump_kw == pump_nom
+        pump_err = pump_kw - pump_nom
+        r_pump = w["pump"] * np.exp(-0.5 * (pump_err / pump_sigma) ** 2)
+
+        # Pénalité stabilité (seulement sur T et Flow pour ne pas figer les vannes si elles cherchent l'idéal)
+        instability = np.sum(np.square(action_vector[:2]))
         r_stab = -w.get("stability", 0.0) * instability
 
-        return float(r_conf + r_prod + r_pump)
+        return float(term_comfort + term_sobriety + term_combo + term_splits + r_pump + r_stab)
 
     def _get_obs(self, node_temps, pipe_flows):
         demands = [self.demand_funcs[n](self.current_t) for n in self.consumer_nodes]
         obs = np.concatenate([node_temps, pipe_flows, demands], dtype=np.float32)
         return np.clip(obs, self.observation_space.low, self.observation_space.high)
+
+    def _compute_ideal_splits(self, t):
+        """
+        Calcule les ratios d'ouverture idéaux basés sur la demande instantanée
+        des consommateurs en aval.
+        Ratio = (Demande totale branche A) / (Demande totale branche A + B)
+        """
+        ideal_ratios = np.zeros(len(self.branching_nodes), dtype=np.float32)
+        
+        for i, b_node in enumerate(self.branching_nodes):
+            children = self.branching_map[b_node]
+            if len(children) < 2:
+                ideal_ratios[i] = 0.5
+                continue
+            
+            # Calcul de la puissance demandée sur chaque branche
+            child_1, child_2 = children[0], children[1]
+            
+            demand_1 = sum(self.demand_funcs[c](t) for c in self.downstream_consumers_map[b_node][child_1])
+            demand_2 = sum(self.demand_funcs[c](t) for c in self.downstream_consumers_map[b_node][child_2])
+            
+            total_demand = demand_1 + demand_2
+            
+            if total_demand > 1e-3:
+                # Ratio pour le premier enfant (correspond à la logique de step())
+                ratio = demand_1 / total_demand
+            else:
+                ratio = 0.5 # Pas de demande, équilibre
+                
+            # On clip pour éviter de fermer totalement une vanne
+            ideal_ratios[i] = np.clip(ratio, 0.05, 0.95)
+            
+        return ideal_ratios
+
+    def set_agent_split_control(self, enabled: bool):
+        """Méthode appelée par le Callback pour débloquer l'agent."""
+        self.agent_manages_splits = enabled
 
     def render(self):
         print(f"T={self.current_t:.0f} | In: {self.actual_inlet_temp:.1f}C, {self.actual_mass_flow:.1f}kg/s | "

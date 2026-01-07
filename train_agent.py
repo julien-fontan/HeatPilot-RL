@@ -18,6 +18,48 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODELS_ROOT_DIR = os.path.join(BASE_DIR, "models")
 CHECKPOINT_PATH_S3 = "julienfntn/"
 
+# --- CALLBACKS ---
+
+class CurriculumCallback(BaseCallback):
+    """
+    Callback pour le Curriculum Learning.
+    Active le contrôle des vannes (splits) par l'agent après un nombre défini de pas d'entraînement.
+    Avant ce seuil, l'environnement utilise une heuristique idéale.
+    """
+    def __init__(self, start_split_step: int, verbose=1):
+        super(CurriculumCallback, self).__init__(verbose)
+        self.start_split_step = start_split_step
+        self.agent_active = False
+
+    def _on_step(self) -> bool:
+        # Si le seuil est 0 ou moins, on considère que c'est activé dès le début (ou géré par config)
+        if self.start_split_step <= 0:
+            return True
+            
+        # Si déjà activé, on ne fait rien
+        if self.agent_active:
+            return True
+
+        # Vérification du seuil
+        if self.num_timesteps >= self.start_split_step:
+            self.agent_active = True
+            if self.verbose > 0:
+                print(f"\n[Curriculum] STEP {self.num_timesteps}: Activation du contrôle des vannes par l'agent !")
+                print("[Curriculum] L'agent est maintenant responsable de la répartition des débits.")
+            
+            # Propagation à l'environnement
+            # On doit "déballer" l'environnement car il est encapsulé dans DummyVecEnv -> Monitor -> HeatNetworkEnv
+            # .envs[0] accède au premier env du VecEnv
+            # .unwrapped descend jusqu'à la classe de base Gym
+            env_unwrapped = self.training_env.envs[0].unwrapped
+            
+            if hasattr(env_unwrapped, "set_agent_split_control"):
+                env_unwrapped.set_agent_split_control(True)
+            else:
+                print("[WARNING] CurriculumCallback: Impossible de trouver 'set_agent_split_control' dans l'env.")
+                
+        return True
+
 class SaveAndEvalCallback(BaseCallback):
     """
     Sauvegarde le modèle et les stats de normalisation.
@@ -67,6 +109,8 @@ class SaveAndEvalCallback(BaseCallback):
                 self._upload_to_s3(norm_path_local, f"vec_normalize_{self.run_name}_{iteration}.pkl")
 
         return True
+
+# --- UTILITAIRES ---
 
 def _find_latest_model_in_dir(directory: str, run_name: str) -> str | None:
     if not os.path.isdir(directory): return None
@@ -127,6 +171,8 @@ def get_user_selection():
     else:
         return os.path.join(MODELS_ROOT_DIR, "PPO_default"), "PPO_default", False
 
+# --- MAIN TRAIN LOOP ---
+
 def train():
     run_dir, run_name, is_resume = get_user_selection()
     
@@ -143,23 +189,39 @@ def train():
         print(f"ERREUR check_env(): {e}")
         return
 
-    # Wrappers
+    # Wrappers: Monitor -> DummyVecEnv -> VecNormalize
     env = Monitor(raw_env)
     env = DummyVecEnv([lambda: env])
     env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10., gamma=0.99)
 
-    # Callback
+    # Paramètres d'entraînement
     episode_length = config.TRAINING_PARAMS["episode_length_steps"]
     save_freq_steps = config.TRAINING_PARAMS["save_freq_episodes"] * episode_length
     
-    callback = SaveAndEvalCallback(
+    # --- Création des Callbacks ---
+    
+    # 1. Sauvegarde & S3
+    save_callback = SaveAndEvalCallback(
         check_freq=save_freq_steps,
         save_dir=run_dir,
         run_name=run_name,
         use_s3=config.TRAINING_PARAMS.get("use_s3_checkpoints", False),
     )
+    
+    # 2. Curriculum (Activation retardée des vannes)
+    # On récupère les paramètres de config de manière sécurisée (défaut: 0 = désactivé/immédiat)
+    curriculum_params = getattr(config, "CURRICULUM_PARAMS", {})
+    split_start_step = curriculum_params.get("split_control_start_step", 0)
+    
+    curr_callback = CurriculumCallback(
+        start_split_step=split_start_step,
+        verbose=1
+    )
+    
+    # Liste des callbacks à passer au modèle
+    callbacks = [save_callback, curr_callback]
 
-    # Modèle
+    # --- Chargement ou Création Modèle ---
     latest_model = _find_latest_model_in_dir(run_dir, run_name)
     reset_timesteps = True
     
@@ -171,7 +233,6 @@ def train():
         iter_str = latest_model.split("_")[-1]
         norm_path = os.path.join(run_dir, f"vec_normalize_{run_name}_{iter_str}.pkl")
         if os.path.exists(norm_path):
-            # print(f"Chargement VecNormalize : {os.path.basename(norm_path)}")
             env = VecNormalize.load(norm_path, env.venv)
             model.set_env(env)
         else:
@@ -194,8 +255,13 @@ def train():
     model.set_logger(new_logger)
 
     print(f"Démarrage Learn (Total: {config.TRAINING_PARAMS['total_timesteps']})...")
+    
     try:
-        model.learn(total_timesteps=config.TRAINING_PARAMS["total_timesteps"], callback=callback, reset_num_timesteps=reset_timesteps)
+        model.learn(
+            total_timesteps=config.TRAINING_PARAMS["total_timesteps"], 
+            callback=callbacks, # On passe la liste ici
+            reset_num_timesteps=reset_timesteps
+        )
     except KeyboardInterrupt:
         print("Interruption utilisateur.")
     finally:

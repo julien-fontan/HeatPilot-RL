@@ -1,3 +1,5 @@
+from collections import deque # Nécessaire pour le BFS
+
 class Graph:
     """
     Analyse la structure du graphe et fournit des accesseurs pour les propriétés topologiques.
@@ -59,6 +61,31 @@ class Graph:
         self.branching_nodes = sorted([n for n in self.nodes if self.out_degree.get(n, 0) > 1])
         self.consumer_nodes = sorted([n for n in self.nodes if n != self.inlet_node])
 
+        self.downstream_consumers_map = {}
+
+        for b_node in self.branching_nodes:
+            self.downstream_consumers_map[b_node] = {}
+            children = self.child_nodes.get(b_node, [])
+            
+            for child in children:
+                # Parcours en largeur (BFS) pour trouver tous les noeuds en aval
+                downstream_consumers = []
+                queue = deque([child])
+                visited = {child}
+                
+                while queue:
+                    curr = queue.popleft()
+                    if curr in self.consumer_nodes:
+                        downstream_consumers.append(curr)
+                    
+                    # Ajout des enfants du noeud courant
+                    for grand_child in self.child_nodes.get(curr, []):
+                        if grand_child not in visited:
+                            visited.add(grand_child)
+                            queue.append(grand_child)
+                
+                self.downstream_consumers_map[b_node][child] = downstream_consumers
+
     def _compute_topological_order(self):
         in_degree = self.in_degree.copy()
         queue = [n for n in self.nodes if in_degree[n] == 0]
@@ -101,3 +128,6 @@ class Graph:
     
     def get_terminal_nodes(self):
         return self.terminal_nodes
+    
+    def get_downstream_consumers_map(self):
+        return self.downstream_consumers_map

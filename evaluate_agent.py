@@ -9,10 +9,10 @@ from district_heating_gym_env import HeatNetworkEnv
 from graph_visualization import DistrictHeatingVisualizer
 import config
 
-# --- CONFIGURATION PAR DÉFAUT ---
-DEFAULT_MODEL_SUBDIR = "PPO_14"  # Nom du dossier par défaut
+# --- CONFIGURATION PAR DÉFAUT ---actuellement
+DEFAULT_MODEL_SUBDIR = "PPO_26"  # Nom du dossier par défaut
 DEFAULT_ITER = None              # None = prend le dernier checkpoint
-SMOOTHING_WINDOW_MIN = 3.0       # Fenêtre de lissage (minutes) pour les graphiques
+SMOOTHING_WINDOW_MIN = 10.0       # Fenêtre de lissage (minutes) pour les graphiques
 # --------------------------------
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -57,16 +57,31 @@ def find_model_path(subdir, iteration=None):
 
 def smooth_signal(data, dt, window_min):
     """Applique une moyenne mobile pour lisser les courbes."""
-    if window_min <= 0: return data
+    arr = np.asarray(data)
+    if window_min <= 0:
+        return arr
+
+    if dt <= 0:
+        raise ValueError(f"dt doit être > 0 (reçu: {dt})")
+
     window_sec = window_min * 60.0
     window_size = int(window_sec / dt)
-    if window_size < 2: return data
-    
-    kernel = np.ones(window_size) / window_size
-    # mode='same' garde la même taille de vecteur
-    return np.convolve(data, kernel, mode='same')
+    if window_size < 2 or arr.size == 0:
+        return arr
 
-def run_evaluation(subdir, iteration_req=None, force_rerun=False):
+    kernel = np.ones(window_size, dtype=np.float64) / float(window_size)
+
+    # IMPORTANT:
+    # np.convolve(..., mode='same') implique un padding par zéros aux bords,
+    # ce qui tire artificiellement les premières/dernières valeurs vers 0.
+    # On pad explicitement avec les valeurs de bord pour éviter cet artefact.
+    pad_left = window_size // 2
+    pad_right = window_size - 1 - pad_left
+    padded = np.pad(arr.astype(np.float64, copy=False), (pad_left, pad_right), mode="edge")
+    smoothed = np.convolve(padded, kernel, mode="valid")
+    return smoothed.astype(arr.dtype, copy=False)
+
+def run_evaluation(subdir, iteration_req=None, force_rerun=False, use_heuristic_splits=False):
     # 1. Localisation des fichiers (Modèle & Data)
     try:
         model_path, iteration = find_model_path(subdir, iteration_req)
@@ -77,8 +92,10 @@ def run_evaluation(subdir, iteration_req=None, force_rerun=False):
     run_dir = os.path.dirname(model_path)
     run_id = f"{subdir}_{iteration}"
     
-    # Définition du chemin de sauvegarde des données
-    output_filename = f"eval_data_{run_id}.npz"
+    # On ajoute un suffixe au fichier cache si on utilise l'heuristique
+    # pour ne pas écraser les résultats de l'agent complet
+    suffix_mode = "_heuristic" if use_heuristic_splits else "_agent"
+    output_filename = f"eval_data_{run_id}{suffix_mode}.npz"
     output_path = os.path.join(run_dir, output_filename)
     
     final_data = None
@@ -110,6 +127,19 @@ def run_evaluation(subdir, iteration_req=None, force_rerun=False):
         env.randomize_geometry = False # Fixe la géométrie
         env = DummyVecEnv([lambda: env])
         
+        # --- CONFIGURATION DU MODE DE CONTRÔLE DES VANNES ---
+        # On accède à l'environnement interne (HeatNetworkEnv)
+        real_env_unwrapped = env.envs[0].unwrapped
+        if hasattr(real_env_unwrapped, "set_agent_split_control"):
+            # Si use_heuristic_splits est True, on DÉSACTIVE le contrôle agent (False)
+            agent_control = not use_heuristic_splits
+            real_env_unwrapped.set_agent_split_control(agent_control)
+            mode_str = "HEURISTIQUE (Automatique)" if use_heuristic_splits else "AGENT (Appris)"
+            print(f"\n[EVAL CONFIG] Mode de gestion des vannes : {mode_str}")
+        else:
+            print("\n[WARN] Impossible de configurer le contrôle des vannes (méthode manquante dans l'env).")
+
+        # b. Chargement Normalisation
         norm_path = os.path.join(run_dir, f"vec_normalize_{subdir}_{iteration}.pkl")
         if os.path.exists(norm_path):
             env = VecNormalize.load(norm_path, env)
@@ -118,12 +148,12 @@ def run_evaluation(subdir, iteration_req=None, force_rerun=False):
         else:
             print("ATTENTION : Pas de fichier VecNormalize trouvé.")
 
-        # b. Chargement Agent
+        # c. Chargement Agent
         print(f"Chargement du modèle PPO...")
         model = PPO.load(model_path)
 
-        # c. Boucle de Simulation
-        real_env = env.envs[0].unwrapped
+        # d. Boucle de Simulation
+        real_env = env.envs[0].unwrapped # Récupération après chargement éventuel
         obs = env.reset()
         
         consumer_nodes = real_env.consumer_nodes
@@ -146,6 +176,7 @@ def run_evaluation(subdir, iteration_req=None, force_rerun=False):
         
         cp = real_env.props["cp"]
         min_ret_temp = config.SIMULATION_PARAMS["min_return_temp"]
+        terminal_nodes = real_env.graph.get_terminal_nodes()
 
         print("Exécution de la simulation en cours...")
         while True:
@@ -159,6 +190,8 @@ def run_evaluation(subdir, iteration_req=None, force_rerun=False):
             t = real_env.current_t
             pipe_flows = info["pipe_mass_flows"]
             node_temps = info["node_temperatures"]
+            # Températures après soutirage aux sous-stations (utile pour calculer le "wasted" terminal)
+            node_temps_after = real_env.network._apply_node_power_consumption(t, node_temps, pipe_flows)
 
             hist["time"].append(t)
             hist["T_source"].append(real_env.actual_inlet_temp)
@@ -179,7 +212,6 @@ def run_evaluation(subdir, iteration_req=None, force_rerun=False):
                 p_phys_max = m_in * cp * delta_T_avail
                 
                 p_sup = min(p_dem, p_phys_max)
-                p_wasted = max(0.0, p_phys_max - p_sup)
 
                 hist["nodes"][nid]["T_in"].append(T_in)
                 hist["nodes"][nid]["m_in"].append(m_in)
@@ -188,7 +220,21 @@ def run_evaluation(subdir, iteration_req=None, force_rerun=False):
                 
                 step_demand += p_dem
                 step_supplied += p_sup
-                step_wasted += p_wasted
+
+            # "Wasted" cohérent avec l'env: pertes thermiques inutiles aux noeuds terminaux
+            # (si T_out après consommation est au-dessus de la température mini de retour)
+            for nid in terminal_nodes:
+                node_idx = real_env.graph.get_id_from_node(nid)
+                T_out = node_temps_after[node_idx]
+
+                # Débit entrant au terminal (somme des débits des conduites entrantes)
+                m_in = 0.0
+                for p_node in topo_parents.get(nid, []):
+                    edge = real_env.graph.edges[(p_node, nid)]
+                    m_in += pipe_flows[edge["pipe_index"]]
+
+                if m_in > 1e-9 and T_out > min_ret_temp:
+                    step_wasted += m_in * cp * (T_out - min_ret_temp)
                 
             hist["demand_total"].append(step_demand)
             hist["supplied_total"].append(step_supplied)
@@ -196,7 +242,7 @@ def run_evaluation(subdir, iteration_req=None, force_rerun=False):
 
         print("Simulation terminée. Traitement des données...")
         
-        # d. Post-traitement et Lissage
+        # e. Post-traitement et Lissage
         sim_dt = real_env.dt
         t_arr = np.array(hist["time"])
         
@@ -223,7 +269,7 @@ def run_evaluation(subdir, iteration_req=None, force_rerun=False):
             for k in ["T_in", "m_in", "p_dem", "p_sup"]:
                 final_data[f"node_{nid}_{k}"] = proc(hist["nodes"][nid][k])
 
-        # e. Sauvegarde
+        # f. Sauvegarde
         print(f"Sauvegarde des données dans : {output_path}")
         np.savez_compressed(output_path, **final_data)
 
@@ -231,9 +277,14 @@ def run_evaluation(subdir, iteration_req=None, force_rerun=False):
     # 4. VISUALISATION
     # ---------------------------------------------------------
     print("Génération des graphiques...")
+    
+    # On ajoute le mode au titre du graphique pour s'y retrouver
+    mode_suffix = "_HEURISTIC" if use_heuristic_splits else "_AGENT"
+    title_suffix = f"{run_id}{mode_suffix}"
+    
     visualizer = DistrictHeatingVisualizer(PLOTS_DIR)
-    visualizer.plot_dashboard_general(final_data, title_suffix=run_id)
-    visualizer.plot_dashboard_nodes_2cols(final_data, title_suffix=run_id)
+    visualizer.plot_dashboard_general(final_data, title_suffix=title_suffix)
+    visualizer.plot_dashboard_nodes_2cols(final_data, title_suffix=title_suffix)
     
     print("Terminé.")
 
@@ -241,8 +292,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", type=str, default=DEFAULT_MODEL_SUBDIR, help="Nom du dossier dans models/")
     parser.add_argument("--iter", type=int, default=DEFAULT_ITER, help="Numéro de l'itération (optionnel)")
-    # Ajout du flag pour forcer le recalcul
     parser.add_argument("--force", action="store_true", help="Forcer la ré-exécution de la simulation même si le fichier .npz existe")
+    
+    # NOUVEAU FLAG
+    parser.add_argument("--heuristic-splits", action="store_true", help="Désactive l'agent pour les splits et utilise l'heuristique idéale.")
+    
     args = parser.parse_args()
 
-    run_evaluation(args.run, args.iter, force_rerun=args.force)
+    run_evaluation(
+        args.run, 
+        args.iter, 
+        force_rerun=args.force, 
+        use_heuristic_splits=args.heuristic_splits
+    )
