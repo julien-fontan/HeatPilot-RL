@@ -8,7 +8,7 @@ This document aims to explain:
 - how the simulator works,
 - what are the physical equations and assumptions,
 - what orders of magnitude from real networks guided the sizing,
-- how the AI learns to control the network,
+- how the agent learns to control the network,
 - and what are the performances of the trained agent.
 
 ---
@@ -17,7 +17,7 @@ This document aims to explain:
 
 A district heating network transports hot water from a production plant to several consumers (buildings) via pipes.
 
-Schema of the main graph used in `config.py`:
+Schema of the network used (in `config.py`):
 
 ```mermaid
 graph LR
@@ -27,23 +27,27 @@ graph LR
     4 --> 5((5))
     5 --> 6((6))
 
-    3 --> 10((10))
-    10 --> 11((11))
+    3 --> 7((7))
+    7 --> 8((8))
 
-    5 --> 30((30))
-    30 --> 31((31))
-    31 --> 32((32))
+    5 --> 9((9))
+    9 --> 10((10))
+    10 --> 11((11))
 ```
 
 
 **The challenge:**  
 - Consumers have a variable power demand to which the agent must adapt dynamically. This is generated randomly in this project, but the power variation is intended to be representative (showers in the morning, heating in the evening...).
-- Water takes time to travel through the pipes (thermal delay). An action taken at time $t$ only has an effect at $t+\Delta{t}$.
+- Water takes time to travel through the pipes (thermal delay). An action taken at time $t$ to modify the inlet temperature only has an effect at $t+\Delta{t}$.
 - If the inlet temperature or flow rate is increased too much: energy consumption (water heating, pumping) and thermal losses (proportional to fluid temperature) increase.
 - Conversely, if these values are decreased too much: consumers get cold (discomfort).
 
 **The AI's objective:**  
-Anticipate demands and control the temperature and flow rate at the source to satisfy needs while minimizing energy consumption (boiler + pumping).
+Dynamically satisfy the thermal power demand of consumers by controlling the temperature and flow rate at the source as well as the opening of valves at branching nodes, while minimizing energy consumption (boiler + pumping).
+
+No realistic power profile having been implemented, the goal of the agent is not really to anticipate demand variations (at least not in the long term), but really to adapt to them live.
+
+The very goal of the exercise is therefore not representative of reality: in reality, demand is normally predicted and then a network control is set up to approach this prediction, not necessarily to dynamically adapt to demand in real time.
 
 ---
 
@@ -70,9 +74,9 @@ A 2 MW network is therefore representative of a local installation, far from met
 ### 2.2. Supply / return temperatures
 
 In `config.py`, we typically use:
-- Supply temperature: between `temp_min = 50.0 °C` and `temp_max = 120.0 °C`. These are wide bounds; the agent must decide to exploit only a certain amplitude of the range.
-- Return temperature: `min_return_temp = 40 °C`, a consumer cannot draw heat from the network if the temperature is lower than or equal to this value.
-- Initial network temperature: at network startup, at $t=0$, the temperature of all network cells is initialized to the minimum return temperature. The agent must therefore learn to "start" the network and manage the transient regime.
+- Supply temperature: between `temp_min = 50.0 °C` and `temp_max = 120.0 °C`. These are wide bounds; the agent will decide to exploit only a certain amplitude of the range.
+- Return temperature: `min_return_temp = 40 °C`, a consumer cannot draw heat from the network if the temperature of the water supplying it is lower than or equal to this value. Furthermore, we consider that if the temperature of terminal nodes (at the end of the network) exceeds this temperature, then power has been lost unnecessarily. It is truly a target temperature for the agent.
+- Transient regime and warmup: By default, the network undergoes a warmup phase of several (simulated) hours before the agent takes control. During this phase, inlet temperature and flow rate are kept constant. The agent therefore takes over a stabilized ("hot") network and does not have to learn the startup procedure, which simplifies regulation learning.
 
 These values respect current standards:
 - Classic networks often operate at **90/70°C** or **80/60°C**.
@@ -107,11 +111,13 @@ In `config.py`, `POWER_PROFILE_CONFIG` defines:
 
 This corresponds to the peak demand of average collective buildings (about 70-100 W/m²). For example, a 3,000 m² building calls for about 200-300 kW during extreme cold.
 
+Again, demand profiles are generated completely randomly: every hour, a power value is drawn for each node. We ensure that the profiles are "smooth" (no step function).
+
 ---
 
 ## 3. Physical modeling (the simulator)
 
-The core of the code is in `district_heating_model.py`. A one-dimensional approach based on the finite volume method is used.
+The core of the physical model is in `district_heating_model.py`. A one-dimensional approach based on the finite volume method is used.
 
 ### 3.1. Simplifying assumptions
 
@@ -147,7 +153,7 @@ Where:
 
 For a cell i, a 1st order **upwind** scheme is used:
 
-$$\frac{dT_i}{dt}= - \frac{\dot{m}}{\rho A dx}(T_i - T_{i-1})  - \lambda (T_i - T_{ext})$$
+$$\frac{dT_i}{dt}= - \frac{\dot{m}}{\rho A dx}(T_i - T_{i-1})- \lambda (T_i - T_{ext})$$
 
 with:
 
@@ -165,7 +171,9 @@ Nodes ensure:
 
 1. **Mass conservation:**
 
-$$\sum \dot{m}_{in} = \sum \dot{m}_{out}$$
+$$
+\sum \dot{m}_{in} = \sum \dot{m}_{out}
+$$
 
 This conservation is imposed by flow routing via **split fractions** at branching nodes.
 
@@ -191,9 +199,7 @@ $$
 T_{\text{out}} = \max\left(T_{\text{in}} - \frac{P_{\text{supplied}}}{\dot{m}_{\text{in}} c_p},\ T_{\text{min return}}\right)
 $$
 
-with $T_{\text{min return}} =$ `MIN_RETURN_TEMP` (40 °C), bounding the return temperature.
-
-**Justification for $T_{\text{min return}}$:** physically, heat transfer stops when the primary circuit temperature (heating network) reaches that of the secondary circuit (building).
+with $T_{\text{min return}} =$ `MIN_RETURN_TEMP` (40 °C), bounding the return temperature (physically, heat transfer stops when the primary circuit temperature (heating network) reaches that of the secondary circuit (building)).
 
 ---
 
@@ -204,74 +210,82 @@ The file `district_heating_gym_env.py` links physics and AI.
 ### 4.1. Agent and time horizon
 
 - An episode represents **one day**: `t_max_day = 24h`.
-- Control step: `dt = 10 s` (the agent takes a decision every 10s).
+- Control step: `dt = 60 s` (the agent takes a decision every 60s).
 
-### 4.2. Observation space (what the agent sees)
+### 4.2. Observation space
 
 The observation is a vector containing:
 
-1. Current temperature at consumer nodes (feedback delayed by transport).
-2. Current supply temperature at the source.
-3. Current mass flow rate.
-4. Current power demand for each consumer.
+1. **Current temperatures** of all network nodes (source, consumers).
+2. **Current mass flow rates** in every pipe.
+3. **Current power demands** for each consumer.
 
 This information is sufficient to:
-- Estimate the current thermal state of the network (via return temperatures),
+- Estimate the current thermal state of the network,
 - Know the instantaneous demand,
-- Adapt $T_{in}$ and $\dot m$ to anticipate load variations.
+- Adapt $T_{in}$, $\dot m$ and split fractions to anticipate load variations.
 
-### 4.3. Action space (what the agent controls)
+### 4.3. Action space
 
-The action is a continuous vector:
+The action is a continuous vector normalized between [-1, 1]. Instead of choosing an absolute target value, the agent chooses a **variation** (delta) to apply to the current state:
 
-1. **Target temperature**: supply temperature setpoint at the source.
-2. **Target flow**: target mass flow rate.
-3. **Splits**: flow distribution in branches.
+1.  **Temperature variation** ($\Delta T$): Percentage of the maximum allowed ramp.
+2.  **Flow rate variation** ($\Delta \dot{m}$): Percentage of the maximum allowed ramp.
+3.  **Valves variation** ($\Delta \text{split}$): Percentage of the maximum opening/closing speed (for each branching node).
 
-**Ramping / dynamic constraints:**
+**Allowed ramps (dynamic constraints):**
 
-To ensure physical realism and protect simulated equipment, variation constraints are imposed. They are based on technical limits of industrial boilers:
+To ensure physical realism and protect simulated equipment, these variations are bounded by constraints configured in `config.py`. Typical limits are:
 
-- **Temperature rise**: limited to about **+0.5 to +1.5 °C per 10 seconds**.
-  - Hot water boilers tolerate gradients of 3 to 8 K/min (biomass) or even 10-15 K/min (fast gas), i.e., about +0.5 to +2.5 °C/10s [^10].
-- **Temperature drop**: limited to about **-0.2 to -0.8 °C per 10 seconds**.
-  - Cooling is slower (thermal inertia, no active cooling by the burner). A sudden drop (thermal shock with cold water) is dangerous for the heating body [^11].
+-   **Temperature**: Max variation of **±3.0 °C / min**.
+    -   Boilers tolerate limited gradients to avoid thermal shocks [^10].
+-   **Flow rate**: Max variation of **±3.0 kg/s / min**.
+-   **Valves**: Max variation of **±10% opening / min**.
 
-These bounds (`max_temp_rise_per_dt`, `max_temp_drop_per_dt`) prevent the agent from adopting overly brutal strategies that would damage a real boiler room.
+These bounds prevent the agent from adopting unrealistic and dangerous all-or-nothing strategies for equipment.
 
 ### 4.4. Cost / reward function
 
-The reward is built to balance thermal comfort and energy sobriety. It is defined in `config.py` (`REWARD_PARAMS`) and calculated at each time step.
+The reward function combines linear penalties (to steer the agent away from critical zones) and Gaussian bonuses (to refine convergence towards the optimum). A "combo" term is also integrated to foster the simultaneous achievement of comfort and sobriety objectives.
 
-$$\text{Reward} = r_{\text{comfort}} + r_{\text{boiler sobriety}} + r_{\text{pump sobriety}}$$
+$$\text{Reward} = \text{R}_{\text{comfort}} + \text{R}_{\text{sobriety}} + \text{R}_{\text{combo}} + \text{R}_{\text{pump}} + \text{R}_{\text{valves}}$$
 
-1. **Comfort ($r_{\text{comfort}}$)**: linearly penalizes **under-production** only (consumers are cold). Over-production is not penalized here (it is in the sobriety term).
-   
-  $$r_{\text{comfort}} = - A \times \frac{\max(0, P_{\text{demand}} - P_{\text{supplied}})}{P_{\text{ref}}}$$
+Details of terms:
 
-2. **Production sobriety ($r_{\text{prod sobriety}}$)**: linearly penalizes **over-production** (boiler energy waste).
-   
-  $$r_{\text{prod sobriety}} = - B \times \frac{\max(0, P_{\text{boiler}} - P_{\text{demand}})}{P_{\text{ref}}}$$
+1.  **Comfort ($R_{comfort}$)**:
+    *   **Linear penalty**: punishes power deficit (unsatisfied demand ~$P_{demand} - P_{supplied}$).
+    *   **Gaussian bonus**: rewards when deficit is close to 0 (target reached).
+    *   Weight: `weights["comfort"]`.
 
-3. **Pumping sobriety ($r_{\text{pump sobriety}}$)**: penalizes deviation from **nominal power** (quadratic) and adds a linear penalty for any excess beyond nominal. This encourages the pump to work around its optimal operating point.
-   
-  $$r_{\text{pump sobriety}} = - C \times \left[ \left(\frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right)^2 + \max\left(0, \frac{P_{\text{pump}} - P_{\text{nom}}}{P_{\text{nom}}}\right) \right]$$
+2.  **Sobriety ($R_{sobriety}$)**:
+    *   **Linear penalty**: punishes wasted heat (produced but not consumed, lost in return).
+    *   **Gaussian bonus**: rewards when waste is close to 0.
+    *   Weight: `weights["waste"]`.
+
+3.  **Combo Bonus ($R_{combo}$)**:
+    *   High reward (`combo_bonus`) awarded only if comfort is ensured (deficit < threshold) AND sobriety is respected (waste < threshold). This helps the agent stabilize an optimal operating point.
+
+4.  **Pumping ($R_{pump}$)**:
+    *   **Gaussian bonus** centered on a nominal pump power (`p_pump_nominal`). The agent is encouraged to use a reasonable flow rate, neither too low (thermally inefficient), nor too high (excessive electrical consumption).
+    *   Weight: `weights["pump"]`.
+
+5.  **Valves guidance ($R_{valves}$)**:
+    *   Learning aid term (implicit curriculum learning). It compares the valve opening chosen by the agent with a **demand-proportional heuristic**.
+    *   This heuristic calculates the sum of requested power downstream of each branch at an intersection, and defines the ideal opening (flow fraction) as the ratio of these demands. If a branch serves 80% of the total downstream demand, it receives 80% of the flow.
+    *   The agent receives a strong bonus (+2.0) if it is close to this target (gap < 5%), which helps it not to explore absurd hydraulic configurations at the beginning.
 
 **Current weights (`config.py`):**
-- $A = 1.0$ (Comfort)
-- $B = 1.0$ (Boiler sobriety)
-- $C = 0.5$ (Pump sobriety)
-- $P_{\text{ref}} = 2000$ kW (average power demand)
-- $P_{\text{nom}} = 15$ kW
-
--> add source for nominal pump power
+- Comfort: 4
+- Sobriety: 2
+- Pump: 5
+- Combo: 10
 
 ### 4.5. Learning parameters (PPO)
 
 To favor exploration and convergence:
 - **Normalization**: `normalize_env = True` (greatly helps convergence and exploration).
-- **Entropy**: an entropy coefficient (`ent_coef = 0.05`) forces the agent to explore more at the beginning.
-- **Horizon**: the neural network update is done every 2048 steps (~6h simulated) to stabilize the gradient.
+- **Entropy**: a relatively low entropy coefficient (`ent_coef = 0.0005`) was chosen, the environment being totally deterministic.
+- **Horizon**: the neural network update is done every 1440 steps (24h simulated, i.e., a full episode) to stabilize the gradient over a whole day.
 
 ---
 
@@ -285,7 +299,6 @@ Here is how the files interact:
 ├── district_heating_model.py       # Physics engine: Pipe and DistrictHeatingNetwork classes.
 ├── run_district_heating_simulation.py # Deterministic simulation "without AI".
 ├── district_heating_gym_env.py     # Gym Environment: physics <-> RL interface.
-├── reward_plot.py                  # Interactive tool to visualize and tune the reward function.
 ├── train_agent.py                  # PPO training with interactive menu and config management.
 ├── evaluate_agent.py               # Detailed evaluation of a specific model (time profiles).
 ├── evaluate_2_agent.py             # Summary evaluation over multiple iterations of the same model (learning curves).
@@ -307,15 +320,7 @@ Make sure you have installed the dependencies:
 pip install numpy scipy matplotlib gymnasium stable-baselines3
 ```
 
-### 6.2. Step 1: tune the reward (optional)
-### -> review
-Use the interactive tool to visualize the impact of weights $A, B, C$ on the reward based on supplied power and flow rate:
-
-```bash
-python reward_plot.py
-```
-
-### 6.3. Step 2: verify physics
+### 6.2. Step 1: verify physics
 
 Run a simple simulation without AI to see how the network reacts thermally:
 
@@ -333,25 +338,18 @@ This:
   - power supplied by the boiler,
   - pumping power (if you add its plot).
  
-The following graphs were plotted with a constant inlet temperature `inlet_temp = 70 °C` and a constant mass flow rate `inlet_mass_flow = 12 kg/s`.
+The following graphs were plotted with a constant inlet temperature `inlet_temp = 75 °C` and a constant mass flow rate `inlet_mass_flow = 15 kg/s`.
 
-Mass fractions at branching were not specified, so flow rates were equally distributed to the concerned nodes (50/50).
+Mass fractions at branches were specified, but remain constant throughout the simulation.
 
-In this configuration, the values fixed at the inlet are too low to meet the power demand. This is visible on the curves:
+![Illustration 1 of the simulation](plots/dashboard_GENERAL_fixed.svg)
 
-![Simulation illustration](plots/power_balance_consumers.svg)
+![Illustration 2 of the simulation](plots/dashboard_NODES_fixed.svg)
 
-The gap between the power delivered by the boiler and the supplied power can be explained by two things:
-- Mainly by mass fractions, not parameterized and therefore poorly parameterized. Indeed, heat surpluses can be sent into branches requiring less heat than others. The actual return temperature there is therefore higher than `min_return_temp`.
-- But also by conductive-convective losses in the pipes (not quantified).
 
-On the following graph, representing only nodes 1 to 6 (5 nodes are not represented for visibility), we can see that the network manages to supply power to all nodes, except the last one in the chain (node 6). When the power supplied to it reaches zero, it means that the network temperature at this node has reached `min_return_temp = 40 °C`, so power withdrawal is no longer authorized.
+### 6.3. Step 3: Train the AI
 
-![](plots/power_per_node_1_6.svg)
-
-### 6.4. Step 3: train the AI
-
-Launch training:
+Run training:
 
 ```bash
 python train_agent.py
@@ -364,9 +362,9 @@ The script offers an interactive menu:
 - The final model will be saved in `models/PPO_custom_name/`.
 - Intermediate checkpoints are created regularly. They are numbered by the number of iterations on the agent's policy.
 
-### 6.5. Step 4: evaluate and visualize
+### 6.4. Step 4: evaluate and visualize
 
-Once training is finished, see how the agent behaves on a test scenario:
+Once training is finished, look at how the agent behaves on a test scenario:
 
 ```bash
 python evaluate_agent.py
@@ -382,24 +380,19 @@ python evaluate_agent.py
 
 ## 7. Results
 
-Among all trained models and tested configurations, the curves below were produced with the most "performant" one.
+Here are the results with an agent trained for 3000 episodes.
 
-On the 4 graphs below, we notice 4 interesting things:
-- The supplied power is half the demand, **the model is therefore terrible** (even if it is the best I managed to obtain). Is the coefficient of the reward function concerning the comfort criterion too low? After a few trials, I am not convinced that it is solely linked to that.
-- The initial network temperature being `min_return_temp = 40 °C`, we observe that **the agent has learned to manage the transient regime** (from $t=0$ to $t=3h$).
-- The value of the mass flow rate around which the model stabilizes is not insignificant: it is the nominal value of the pump. Since the reward function penalizes the use of the pump at points other than its nominal point, the model has learned to **stabilize at this nominal operating point**. Note that the model **deviates from this rule for the initial transient phase**, where using the pump at a higher regime is less penalized than the power difference.
-- The reward function never reaches zero (the reward function was designed so that this is the theoretical maximum value). The model is therefore satisfied with a **sub-optimum**.
+![](plots/dashboard_GENERAL_PPO_29_4320000_agent.svg)
 
-![](plots/eval_PPO_normalisé1_168.svg)
+We can notice that the agent learned to use the pump in its nominal operating zone (around $15\ \text{kg/s}$), and to exploit only the relevant part of the possible inlet temperature range.
 
-We can observe on the following graph, as a function of the number of updates to the agent's internal policy, the effects of training on:
-- the average reward per step of an episode
-- the energies supplied and delivered per episode (= per day) (calculated as the integrals of power over the day).
+![](plots/dashboard_NODES_PPO_29_4320000_agent.svg)
 
-**Why does the reward decrease as iterations progress?**
+Here are the learning curves:
 
-![](plots/summary_eval_PPO_normalisé1.svg)
+![](plots/summary_eval_PPO_29.svg)
 
+We can perceive that the agent first learned to reduce the deficit (because reward is more important), before seeking to reduce losses.
 
 ---
 
@@ -408,20 +401,19 @@ We can observe on the following graph, as a function of the number of updates to
 ### Known limitations and improvement tracks
 
 1. **Hydraulic approximation:**  
-   The current model does not take into account detailed hydraulic dynamics (variable manometric head, linear pressure losses, etc.). More precise modeling could improve the reality of simulations.
+   The current model does not take into account detailed hydraulic dynamics (variable manometric head, linear pressure losses, etc.). More precise modeling could improve the reality 
+   of simulations.
 
 ### Future research tracks
 
 Additional analysis tracks (to be implemented later):
 
 - **Robustness to unconventional demand profiles**: test with demand scenarios different from those seen during training.
-- **Comparison of RL policy with a simplified "heating curve"**
+- **Comparison of RL policy with a simplified "water law"**
 
 ---
 
-## 9. References and sources
-
-Technical data used for sizing comes from specialized literature on district heating networks:
+## 9. References and Sources
 
 [^1]: UEM Metz, [Biomasse Montigny-lès-Metz](https://www.uem-metz.fr/accueil-chauffage-urbain/biomasse-montigny/)
 [^2]: Bioénergie Promotion, [Réseau de chaleur d'Hazebrouck](https://www.bioenergie-promotion.fr/96923/le-reseau-de-chaleur-dhazebrouck-maitrise-son-prix-de-lenergie-grace-a-la-biomasse/)

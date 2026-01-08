@@ -1,133 +1,102 @@
-from collections import deque # Nécessaire pour le BFS
+from collections import deque
 
 class Graph:
     """
-    Analyse la structure du graphe et fournit des accesseurs pour les propriétés topologiques.
+    Analyse la structure du graphe et fournit des accesseurs optimisés pour NumPy (indices entiers).
     """
     def __init__(self, edges):
-        
-        # Si edges est une liste de tuples, on convertit en dictionnaire pour permettre le stockage d'attributs
         if isinstance(edges, list):
-            self.edges = {e: {} for e in edges}
-        else:
             self.edges = edges
+        else:
+            self.edges = list(edges.keys())
             
-        self.n_edges = len(self.edges)
-        
         self._build_nodes()
         self._find_node_roles()
+        self._compute_topological_order()
 
-        # Mappings vers des indices
-        self.node_ids = {n: i for i, n in enumerate(self.nodes)}
-        self.inv_node_ids = {i: n for i, n in enumerate(self.nodes)}
-        
-        self._compute_topological_order()   # Tri topologique (faire les calculs dans le bon ordre)
+        # Structures optimisées pour la vectorisation
+        self.int_adjacency = [[] for _ in range(self.n_nodes)]
+        self.int_parent_adjacency = [[] for _ in range(self.n_nodes)]
 
     def _build_nodes(self):
         self.nodes = set()
-        self.parent_nodes = {}
-        self.child_nodes = {}
-        self.out_degree = {} # child count
-        self.in_degree = {} # parent count
+        self.parent_nodes = {} 
+        self.child_nodes = {}  
+        self.out_degree = {}
+        self.in_degree = {}
         
         for u, v in self.edges:
             self.nodes.add(u)
             self.nodes.add(v)
-            if u not in self.child_nodes: self.child_nodes[u] = []
-            self.child_nodes[u].append(v)
-            if v not in self.parent_nodes: self.parent_nodes[v] = []
-            self.parent_nodes[v].append(u)
-
+            self.child_nodes.setdefault(u, []).append(v)
+            self.parent_nodes.setdefault(v, []).append(u)
             self.out_degree[u] = self.out_degree.get(u, 0) + 1
-            if v not in self.out_degree: self.out_degree[v] = 0
             self.in_degree[v] = self.in_degree.get(v, 0) + 1
             if u not in self.in_degree: self.in_degree[u] = 0
+            if v not in self.out_degree: self.out_degree[v] = 0
 
-        for i in self.child_nodes:  # on trie pour assurer le déterminisme
-            self.child_nodes[i].sort()
-        for i in self.parent_nodes:
-            self.parent_nodes[i].sort()
+        for n in self.child_nodes: self.child_nodes[n].sort()
+        for n in self.parent_nodes: self.parent_nodes[n].sort()
 
-        self.nodes = sorted(list(self.nodes))
-        self.n_nodes = len(self.nodes)
-        self.terminal_nodes = [n for n in self.nodes if n not in self.child_nodes or not self.child_nodes[n]]
+        self.nodes_list = sorted(list(self.nodes))
+        self.n_nodes = len(self.nodes_list)
+        
+        self.node_to_id = {n: i for i, n in enumerate(self.nodes_list)}
+        self.id_to_node = {i: n for i, n in enumerate(self.nodes_list)}
+        
+        self.terminal_nodes = [n for n in self.nodes_list if not self.child_nodes.get(n)]
 
     def _find_node_roles(self):
-        inlets = [n for n in self.nodes if n not in self.parent_nodes]  # pas de parents
-        if len(inlets) == 1:
-            self.inlet_node = inlets[0]
-        else:
-            self.inlet_node = inlets
-        self.branching_nodes = sorted([n for n in self.nodes if self.out_degree.get(n, 0) > 1])
-        self.consumer_nodes = sorted([n for n in self.nodes if n != self.inlet_node])
+        inlets = [n for n in self.nodes_list if n not in self.parent_nodes]
+        self.inlet_node = inlets[0] if len(inlets) == 1 else inlets
+        
+        self.branching_nodes = sorted([n for n in self.nodes_list if self.out_degree.get(n, 0) > 1])
+        self.consumer_nodes = sorted([n for n in self.nodes_list if n != self.inlet_node])
+        
+        self.branching_indices = [self.node_to_id[n] for n in self.branching_nodes]
+        self.consumer_indices_list = [self.node_to_id[n] for n in self.consumer_nodes]
 
-        self.downstream_consumers_map = {}
+        self.downstream_consumers_indices_map = {}
 
         for b_node in self.branching_nodes:
-            self.downstream_consumers_map[b_node] = {}
-            children = self.child_nodes.get(b_node, [])
+            b_idx = self.node_to_id[b_node]
+            self.downstream_consumers_indices_map[b_idx] = {}
             
-            for child in children:
-                # Parcours en largeur (BFS) pour trouver tous les noeuds en aval
-                downstream_consumers = []
+            for child in self.child_nodes.get(b_node, []):
+                child_idx = self.node_to_id[child]
+                consumers_idx = []
                 queue = deque([child])
                 visited = {child}
-                
                 while queue:
                     curr = queue.popleft()
                     if curr in self.consumer_nodes:
-                        downstream_consumers.append(curr)
-                    
-                    # Ajout des enfants du noeud courant
-                    for grand_child in self.child_nodes.get(curr, []):
-                        if grand_child not in visited:
-                            visited.add(grand_child)
-                            queue.append(grand_child)
-                
-                self.downstream_consumers_map[b_node][child] = downstream_consumers
+                        consumers_idx.append(self.node_to_id[curr])
+                    for gc in self.child_nodes.get(curr, []):
+                        if gc not in visited:
+                            visited.add(gc)
+                            queue.append(gc)
+                            
+                self.downstream_consumers_indices_map[b_idx][child_idx] = consumers_idx
 
     def _compute_topological_order(self):
         in_degree = self.in_degree.copy()
-        queue = [n for n in self.nodes if in_degree[n] == 0]
-        self.topo_nodes = []
+        queue = [n for n in self.nodes_list if in_degree[n] == 0]
+        self.topo_indices = []
         while queue:
             u = queue.pop(0)
-            self.topo_nodes.append(self.node_ids[u])
+            self.topo_indices.append(self.node_to_id[u])
             for v in self.child_nodes.get(u, []):
                 in_degree[v] -= 1
                 if in_degree[v] == 0:
                     queue.append(v)
 
-    # --- Getters ---
-    def get_id_from_node(self, node):
-        return self.node_ids[node]
-
-    def get_node_from_id(self, idx):
-        return self.inv_node_ids[idx]
-
-    def get_nodes_count(self):
-        return self.n_nodes
-
-    def get_parent_nodes(self):
-        return self.parent_nodes
+    def get_id(self, node): return self.node_to_id[node]
+    def get_node(self, idx): return self.id_to_node[idx]
     
-    def get_child_nodes(self):
-        return self.child_nodes
+    def register_pipe_index(self, u, v, pipe_idx):
+        u_id, v_id = self.node_to_id[u], self.node_to_id[v]
+        self.int_adjacency[u_id].append((v_id, pipe_idx))
+        self.int_parent_adjacency[v_id].append((u_id, pipe_idx))
 
-    def get_inlet_node(self):
-        return self.inlet_node
-    
-    def get_consumer_nodes(self):
-        return self.consumer_nodes
-    
-    def get_branching_nodes(self):
-        return self.branching_nodes
-
-    def get_topo_nodes(self):
-        return self.topo_nodes
-    
-    def get_terminal_nodes(self):
-        return self.terminal_nodes
-    
-    def get_downstream_consumers_map(self):
-        return self.downstream_consumers_map
+    def get_downstream_consumers_indices(self, branch_idx, child_idx):
+        return self.downstream_consumers_indices_map.get(branch_idx, {}).get(child_idx, [])

@@ -48,7 +48,7 @@ class DistrictHeatingVisualizer:
         if split_keys:
             ax3 = ax.twinx()
             # Décalage de l'axe vers la droite ("parasite axis")
-            ax3.spines["right"].set_position(("axes", 1.1))
+            ax3.spines["right"].set_position(("axes", 1.15))
             ax3.set_frame_on(True)
             ax3.patch.set_visible(False)
             
@@ -74,15 +74,15 @@ class DistrictHeatingVisualizer:
         labels = [l.get_label() for l in lines]
         # ax.legend(lines, labels, loc="upper center", bbox_to_anchor=(0.5, 1.15), ncol=len(lines), frameon=False)
         if split_keys:
-            ax3.legend(lines, labels, ncol=1, frameon=True, loc="upper right", framealpha=0.9)
+            ax3.legend(lines, labels, ncol=1, frameon=True, loc="lower right", framealpha=0.95, fontsize=9)
         else:
-            ax2.legend(lines, labels, ncol=2, frameon=True, loc="upper right", framealpha=0.9)
+            ax2.legend(lines, labels, ncol=2, frameon=True, loc="lower right", framealpha=0.95, fontsize=9)
 
         titre="1. Contrôle à la source"
         if split_keys :
             titre+= " & vannes"
 
-        ax.set_title(titre, fontsize=12, fontweight='bold', loc="left", pad=20)
+        ax.set_title(titre, fontsize=12, fontweight='bold', loc="left", pad=10)
         ax.grid(True, alpha=0.3)
 
         # --- GRAPHIQUE 2 : Bilan énergétique ---
@@ -99,16 +99,18 @@ class DistrictHeatingVisualizer:
         ax.set_ylabel("Puissance (MW)")
         ax.set_xlabel("Temps (heures)")
         ax.set_title("2. Bilan global réseau", fontsize=12, fontweight='bold', loc="left", pad=10)
-        ax.legend(loc='upper right', frameon=True, fontsize=9)
+        ax.legend(loc='lower right', frameon=True, fontsize=9, framealpha=0.95)
+        ax.set_ylim(bottom=1.5)
         ax.grid(True, alpha=0.3)
 
         # Sauvegarde
         plt.tight_layout()
         # Petite correction car tight_layout gère mal les axes décalés (offset spines)
         if split_keys:
-            plt.subplots_adjust(right=0.85)
+            plt.subplots_adjust(right=0.75)
 
         out_file = os.path.join(self.plots_dir, f"dashboard_GENERAL_{title_suffix}.svg")
+        # out_file = os.path.join(self.plots_dir, f"dashboard_GENERAL_{title_suffix}.png")
         plt.savefig(out_file, bbox_inches='tight') # bbox_inches aide aussi pour l'axe décalé
         print(f" Graphique sauvegardé : {out_file}")
         plt.close(fig)
@@ -159,7 +161,7 @@ class DistrictHeatingVisualizer:
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=2), zorder=10)
             l1, lab1 = ax.get_legend_handles_labels()
             l2, lab2 = ax2.get_legend_handles_labels()
-            ax2.legend(l1+l2, lab1+lab2, loc='upper right', fontsize=8, ncol=3, frameon=True)
+            ax2.legend(l1+l2, lab1+lab2, loc='upper right', fontsize=9, ncol=3, frameon=True)
         for i in range(n_rows):
             if i < n_left:
                 plot_node(axs[i, 0], left_nodes[i])
