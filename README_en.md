@@ -331,12 +331,10 @@ python run_district_heating_simulation.py
 This:
 - creates a network with randomly generated but reproducible pipes and losses,
 - applies power profiles to consumer nodes,
-- calculates and plots:
+- calculates and plots two summary graphs:
 
-  - total power demanded,
-  - total power effectively supplied,
-  - power supplied by the boiler,
-  - pumping power (if you add its plot).
+  1. **Source control**: Displays the evolution of inlet temperature ($T_{in}$) and mass flow rate ($\dot{m}$), as well as valve openings if controlled.
+  2. **Energy balance**: Dynamically compares total consumer demand, effectively supplied power, and thermal losses, visually identifying periods of deficit (discomfort) or overheating (waste).
  
 The following graphs were plotted with a constant inlet temperature `inlet_temp = 75 °C` and a constant mass flow rate `inlet_mass_flow = 15 kg/s`.
 

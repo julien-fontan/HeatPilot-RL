@@ -331,12 +331,10 @@ python run_district_heating_simulation.py
 Cela :
 - crée un réseau avec des conduites et pertes générées aléatoirement mais reproductibles,
 - applique des profils de puissance aux nœuds consommateurs,
-- calcule et trace :
+- calcule et trace deux graphiques de synthèse :
 
-  - la puissance totale demandée,
-  - la puissance totale effectivement soutirée,
-  - la puissance fournie par la chaudière,
-  - la puissance de pompage (si vous ajoutez son tracé).
+  1. **Contrôle à la source** : Affiche l'évolution conjointe de la température de départ ($T_{in}$) et du débit massique ($\dot{m}$), ainsi que l'ouverture des vannes si elles sont pilotées.
+  2. **Bilan énergétique** : Compare dynamiquement la demande totale des consommateurs, la puissance réellement fournie, et les pertes thermiques, permettant d'identifier visuellement les périodes de déficit (inconfort) ou de surchauffe (gaspillage).
  
 Les graphes suivants ont été tracés avec une température d'entrée constante `inlet_temp = 75 °C` et un débit massique constant `inlet_mass_flow = 15 kg/s`.
 
@@ -392,7 +390,7 @@ Voici les courbes d'apprentissage :
 
 ![](plots/summary_eval_PPO_29.svg)
 
-On peut appercevoir que l'agent à d'abord appris à réduire le déficit (car reward plus important), avant de chercher à réduire les pertes.
+On peut appercevoir que l'agent a d'abord appris à réduire le déficit (car reward plus important), avant de chercher à réduire les pertes.
 
 ---
 
