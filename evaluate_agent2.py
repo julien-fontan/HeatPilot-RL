@@ -191,6 +191,7 @@ def plot_learning_curve(subdir, metrics_list, progress_data=None):
     
     ax1.set_title(f"3. Entraînement du modèle", fontsize=12, fontweight='bold', pad=10, loc='left')
     ax1.set_ylabel("Énergie journalière (MWh)")
+    ax1.set_yscale('log')
     ax1.grid(True, alpha=0.3)
     ax1.legend(loc="best", frameon=True, fontsize=9, framealpha=0.9)
     # ax1.spines['top'].set_visible(False)

@@ -7,13 +7,31 @@ from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.logger import configure
+from stable_baselines3.common.logger import configure, Logger, CSVOutputFormat, HumanOutputFormat
+import sys
+import csv
 
 from district_heating_gym_env import HeatNetworkEnv
 import config
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODELS_ROOT_DIR = os.path.join(BASE_DIR, "models")
+
+class AppendingCSVOutputFormat(CSVOutputFormat):
+    def __init__(self, filename: str):
+        self.filename = filename
+        if os.path.exists(filename) and os.path.getsize(filename) > 0:
+            # Read header to restore keys and avoid rewriting it
+            with open(filename, 'r') as f:
+                reader = csv.reader(f)
+                self.keys = next(reader, [])
+            
+            # Open in append mode
+            self.file = open(filename, 'a', newline='')
+            self.sep = ","
+            self.quote_char = '"'
+        else:
+            super().__init__(filename)
 
 class SaveCallback(BaseCallback):
     def __init__(self, check_freq: int, save_dir: str, run_name: str, verbose=1):
@@ -117,7 +135,13 @@ def train():
                     batch_size=config.TRAINING_PARAMS["batch_size"],
                     ent_coef=config.TRAINING_PARAMS["ent_coef"])
     
-    model.set_logger(configure(run_dir, ["stdout", "csv", "tensorboard"]))
+    # Custom logger: Append to progress.csv, Disable Tensorboard
+    log_formats = [
+        HumanOutputFormat(sys.stdout),
+        AppendingCSVOutputFormat(os.path.join(run_dir, "progress.csv"))
+    ]
+    model.set_logger(Logger(run_dir, log_formats))
+
     try:
         model.learn(total_timesteps=config.TRAINING_PARAMS["total_timesteps"], callback=save_callback, reset_num_timesteps=reset_timesteps)
     except KeyboardInterrupt:
