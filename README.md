@@ -380,15 +380,15 @@ python evaluate_agent.py
 
 Voici les résultats avec un agent entrainé sur 3000 épisodes.
 
-![](plots/dashboard_GENERAL_PPO_29_7344000_agent.svg)
+![](plots/dashboard_GENERAL_PPO_30_11557440_agent.svg)
 
 On peut remarquer que l'agent a appris à utiliser la pompe dans sa zone de fonctionnement nominal (autour de $15\ \text{kg/s}$), et à exploiter seulement la partie pertinente du domaine de température possible en entrée.
 
-![](plots/dashboard_NODES_PPO_29_7344000_agent.svg)
+![](plots/dashboard_NODES_PPO_30_11557440_agent.svg)
 
 Voici les courbes d'apprentissage :
 
-![](plots/summary_eval_PPO_29.svg)
+![](plots/summary_eval_PPO_30.svg)
 
 On peut appercevoir que l'agent a d'abord appris à réduire le déficit (car reward plus important), avant de chercher à réduire les pertes.
 

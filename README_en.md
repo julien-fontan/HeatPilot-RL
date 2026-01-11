@@ -380,15 +380,15 @@ python evaluate_agent.py
 
 Here are the results with an agent trained for 3000 episodes.
 
-![](plots/dashboard_GENERAL_PPO_29_7344000_agent.svg)
+![](plots/dashboard_GENERAL_PPO_30_11557440_agent.svg)
 
 We can notice that the agent learned to use the pump in its nominal operating zone (around $15\ \text{kg/s}$), and to exploit only the relevant part of the possible inlet temperature range.
 
-![](plots/dashboard_NODES_PPO_29_7344000_agent.svg)
+![](plots/dashboard_NODES_PPO_30_11557440_agent.svg)
 
 Here are the learning curves:
 
-![](plots/summary_eval_PPO_29.svg)
+![](plots/summary_eval_PPO_30.svg)
 
 We can perceive that the agent first learned to reduce the deficit (because reward is more important), before seeking to reduce losses.
 

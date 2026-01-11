@@ -121,7 +121,7 @@ REWARD_PARAMS = dict(
 
         # Bonus combo : gros bonus si confort OK ET pertes faibles
         combo_bonus=10.0,               # Bonus
-        combo_comfort_deficit_max_kw=30.0, # Confort atteint si (dem_kw - sup_kw) <= ce seuil
-        combo_wasted_max_kw=50.0,       # Pertes faibles si wasted_kw <= ce seuil
+        combo_comfort_deficit_max_kw=15.0, # Confort atteint si (dem_kw - sup_kw) <= ce seuil
+        combo_wasted_max_kw=25.0,       # Pertes faibles si wasted_kw <= ce seuil
     )
 )
