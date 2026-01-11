@@ -253,7 +253,7 @@ $$\text{Reward} = \text{R}_{\text{confort}} + \text{R}_{\text{sobriété}} + \te
 Détail des termes :
 
 1.  **Confort ($R_{confort}$)** :
-    *   **Pénalité linéaire** : punit le déficit de puissance (demande non satisfaite ~$P_{demande} - P_{fourni}$).
+    *   **Pénalité linéaire** : punit le déficit de puissance (demande non satisfaite ~ $P_{demande} - P_{fourni}$).
     *   **Bonus gaussien** : récompense lorsque le déficit est proche de 0 (cible atteinte).
     *   Pondération : `weights["comfort"]`.
 
