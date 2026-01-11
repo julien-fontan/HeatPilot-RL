@@ -253,7 +253,7 @@ $$\text{Reward} = \text{R}_{\text{comfort}} + \text{R}_{\text{sobriety}} + \text
 Details of terms:
 
 1.  **Comfort ($R_{comfort}$)**:
-    *   **Linear penalty**: punishes power deficit (unsatisfied demand ~ $P_{demand} - P_{supplied}$).
+    *   **Linear penalty**: punishes power deficit (unsatisfied demand $= P_{demand} - P_{supplied}$).
     *   **Gaussian bonus**: rewards when deficit is close to 0 (target reached).
     *   Weight: `weights["comfort"]`.
 
